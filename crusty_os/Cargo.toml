@@ -3,7 +3,7 @@
 
 [[bin]]
 name = "crusty_os"
-test = false
+test = true
 bench = false
 
 [package]
