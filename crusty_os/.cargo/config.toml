@@ -7,3 +7,6 @@ build-std-features = ["compiler-builtins-mem"]
 
 [build]
 target = "x86_64-crusty_os.json"
+
+[target.'cfg(target_os = "none")']
+runner = "bootimage runner"
