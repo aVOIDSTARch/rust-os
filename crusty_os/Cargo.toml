@@ -2,6 +2,7 @@
 name = "crusty_os"
 version = "0.1.0"
 edition = "2024"
+authors = ["Louis Casinelli"]
 
 [dependencies]
 
