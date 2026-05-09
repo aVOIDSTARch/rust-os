@@ -2,7 +2,7 @@
 # Cargo.toml
 
 [[bin]]
-name = "blog_os"
+name = "crusty_os"
 test = false
 bench = false
 
