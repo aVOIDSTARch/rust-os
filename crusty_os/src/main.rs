@@ -2,6 +2,7 @@
 #![no_main] // disable all Rust-level entry points
 #![feature(custom_test_frameworks)]
 #![test_runner(crate::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
 use core::panic::PanicInfo;
 
@@ -15,6 +16,9 @@ mod vga_buffer;
 pub extern "C" fn _start() -> ! {
     // write the string to the VGA text buffer at 0xb8000
     println!("Hello World{}", "!");
+    // invoke the test runner if we're running tests
+    #[cfg(test)]
+    test_main();
     // this function must never return, since there is no operating system to return to
     loop {}
 }
