@@ -1,0 +1,4 @@
+# .cargo/config.toml
+
+[unstable]
+json-target-spec = true
