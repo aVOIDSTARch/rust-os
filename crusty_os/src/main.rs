@@ -9,16 +9,16 @@ use core::panic::PanicInfo;
 mod vga_buffer;
 
 
-
-
 // this function is the entry point, since the linker looks for a function named `_start` by default
 #[unsafe(no_mangle)] // don't mangle the name of this function
 pub extern "C" fn _start() -> ! {
     // write the string to the VGA text buffer at 0xb8000
     println!("Hello World{}", "!");
+    
     // invoke the test runner if we're running tests
     #[cfg(test)]
     test_main();
+
     // this function must never return, since there is no operating system to return to
     loop {}
 }
@@ -36,4 +36,11 @@ pub fn test_runner(tests: &[&dyn Fn()]) {
     for test in tests {
         test();
     }
+}
+
+#[test_case]
+fn trivial_assertion() {
+    print!("trivial assertion... ");
+    assert_eq!(1, 1);
+    println!("[ok]");
 }
