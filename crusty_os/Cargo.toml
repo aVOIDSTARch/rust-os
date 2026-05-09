@@ -1,3 +1,11 @@
+
+# Cargo.toml
+
+[[bin]]
+name = "blog_os"
+test = false
+bench = false
+
 [package]
 name = "crusty_os"
 version = "0.1.0"
