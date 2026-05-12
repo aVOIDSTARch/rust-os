@@ -8,6 +8,9 @@ use spin::Mutex;
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+
+// ENUMS // ------
+
 pub enum Color {
     Black = 0,
     Blue = 1,
@@ -26,6 +29,8 @@ pub enum Color {
     Yellow = 14,
     White = 15,
 }
+
+// TYPES // ------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -51,6 +56,8 @@ const BUFFER_WIDTH: usize = 80;
 struct Buffer {
     chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
 }
+
+// WRITER // ------
 
 pub struct Writer {
     column_position: usize,
@@ -131,6 +138,8 @@ lazy_static! {
   });
 }
 
+// MACROS // ------
+
 // Print macros using our custom VGA buffer writer
 #[macro_export]
 macro_rules! print {
@@ -147,4 +156,29 @@ macro_rules! println {
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
     WRITER.lock().write_fmt(args).unwrap();
+}
+
+
+// TESTS // ------
+
+#[test_case]
+fn test_println_simple() {
+    println!("test_println_simple output");
+}
+
+#[test_case]
+fn test_println_many() {
+    for _ in 0..200 {
+        println!("test_println_many output");
+    }
+}
+
+#[test_case]
+fn test_println_output() {
+    let s = "Some test string that fits on a single line";
+    println!("{}", s);
+    for (i, c) in s.chars().enumerate() {
+        let screen_char = WRITER.lock().buffer.chars[BUFFER_HEIGHT - 2][i].read();
+        assert_eq!(char::from(screen_char.ascii_character), c);
+    }
 }
