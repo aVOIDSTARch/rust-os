@@ -6,6 +6,10 @@ name = "crusty_os"
 test = true
 bench = false
 
+[[test]]
+name = "should_panic"
+harness = false
+
 [package]
 name = "crusty_os"
 version = "0.1.0"
