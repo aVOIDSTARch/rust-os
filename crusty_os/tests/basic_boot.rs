@@ -6,7 +6,7 @@
 
 
 use crusty_os::{Testable, println};
-use core::panic::PanicInfo;
+
 
 #[unsafe(no_mangle)] // don't mangle the name of this function
 pub extern "C" fn _start() -> ! {
@@ -22,9 +22,4 @@ fn test_println() {
 
 fn test_runner(tests: &[&dyn Testable]) {
     unimplemented!();
-}
-
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    crusty_os::test_panic_handler(info)
 }

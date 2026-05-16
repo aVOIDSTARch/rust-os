@@ -10,7 +10,9 @@ use core::panic::PanicInfo;
 pub mod serial;
 pub mod vga_buffer;
 pub mod interrupts;
+pub mod gdt;
 
+// Trait and functions for testing
 pub trait Testable {
     fn run(&self) -> ();
 }
@@ -26,6 +28,7 @@ where
     }
 }
 
+/// This function is called from `main` when `cfg(test)` is set.
 pub fn test_runner(tests: &[&dyn Testable]) {
     serial_println!("Running {} tests", tests.len());
     for test in tests {
@@ -34,12 +37,7 @@ pub fn test_runner(tests: &[&dyn Testable]) {
     exit_qemu(QemuExitCode::Success);
 }
 
-pub fn test_panic_handler(info: &PanicInfo) -> ! {
-    serial_println!("[failed]\n");
-    serial_println!("Error: {}\n", info);
-    exit_qemu(QemuExitCode::Failed);
-    loop {}
-}
+
 
 /// Entry point for `cargo test`
 #[cfg(test)]
@@ -50,12 +48,30 @@ pub extern "C" fn _start() -> ! {
     loop {}
 }
 
+/// This function is called on panic in test mode.
+pub fn test_panic_handler(info: &PanicInfo) -> ! {
+    serial_println!("[failed]\n");
+    serial_println!("Error: {}\n", info);
+    exit_qemu(QemuExitCode::Failed);
+    loop {}
+}
+
+/// This function is called on panic for `#[cfg(test)]` builds.
 #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     test_panic_handler(info)
 }
 
+/// This function is called on panic for `#[cfg(not(test))]` builds.
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    println!("{}", info);
+    loop {}
+}
+
+/// Exit QEMU with the given exit code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum QemuExitCode {
@@ -72,6 +88,8 @@ pub fn exit_qemu(exit_code: QemuExitCode) {
     }
 }
 
+/// Initializer.
 pub fn init() {
+    gdt::init();
     interrupts::init_idt();
 }
