@@ -10,6 +10,10 @@ bench = false
 name = "should_panic"
 harness = false
 
+[[test]]
+name = "stack_overflow"
+harness = false
+
 [package]
 name = "crusty_os"
 version = "0.1.0"

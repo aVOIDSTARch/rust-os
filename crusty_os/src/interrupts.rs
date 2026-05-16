@@ -14,7 +14,9 @@ pub fn init_idt() {
 lazy_static!(
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
+        // Breakpoint exception handler.
         idt.breakpoint.set_handler_fn(breakpoint_handler);
+        // Double fault exception handler.
         unsafe {
             idt.double_fault
                 .set_handler_fn(double_fault_handler)
@@ -31,12 +33,6 @@ extern "x86-interrupt" fn double_fault_handler(stack_frame: x86_64::structures::
     // println!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
     panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
 }
-
-
-
-
-
-
 
 // Breakpoint exception code // -------------------------------------
 
