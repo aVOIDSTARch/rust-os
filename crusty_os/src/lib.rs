@@ -11,6 +11,7 @@ pub mod serial;
 pub mod vga_buffer;
 pub mod interrupts;
 pub mod gdt;
+pub mod memory;
 
 // Trait and functions for testing
 pub trait Testable {
@@ -39,10 +40,17 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 
 
 
-/// Entry point for `cargo test`
+// Entry point for `cargo test`
+
+// assign entry point for `cargo test` builds to `_start` function in this file
 #[cfg(test)]
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+use bootloader::{entry_point, BootInfo};
+
+#[cfg(test)]
+entry_point!(test_kernel_main);
+
+#[cfg(test)]
+fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
     init();
     test_main();
     hlt_loop();

@@ -8,14 +8,32 @@
 
 
 use crusty_os::println;
+use bootloader::{BootInfo, entry_point};
 
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+entry_point!(kernel_main);
+
+
+fn kernel_main(boot_info: &'static BootInfo) -> ! {
+    use crusty_os::memory::active_level_4_table;
+    use x86_64::VirtAddr;
+
     println!("Hello World{}", "!");
 
     crusty_os::init();
 
-    // trigger a page fault
+    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let level_4_table = unsafe { active_level_4_table(phys_mem_offset)};
+
+    for (i, entry) in level_4_table.iter().enumerate() {
+        if entry.is_unused() {
+            println!("L4 Entry {}: {:?}", i, entry);
+        }
+
+    }
+
+    #[cfg(test)]
+    test_main();
+
 
     #[cfg(test)]
     test_main();
