@@ -8,14 +8,15 @@
 
 
 use crusty_os::println;
+
 use bootloader::{BootInfo, entry_point};
 
 entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
-
     use crusty_os::memory;
-    use x86_64::{structures::paging::Translate, VirtAddr};
+    use x86_64::{structures::paging::Page, VirtAddr};
+    use crusty_os::memory::BootInfoFrameAllocator;
 
     println!("Hello World{}", "!");
 
@@ -23,20 +24,21 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     // Initialize the memory mapper and the frame allocator.
-    let mapper = unsafe { memory::init(phys_mem_offset) };
+    let mut mapper = unsafe { memory::init(phys_mem_offset) };
+    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
 
-    let addresses = [
-        0xb8000,
-        0x201008,
-        0x0100_0020_1a10,
-        boot_info.physical_memory_offset,
-    ];
+     // Map the page containing the VGA text buffer to an unused virtual address.
+    let page = Page::containing_address(VirtAddr::new(0xdeadbeaf000));
+    memory::create_example_mapping(page, &mut mapper, &mut frame_allocator);
 
-    for &address in &addresses {
-        let virt = VirtAddr::new(address);
-        let phys = mapper.translate_addr(virt);
-        println!("virtual address: {:?} -> physical address: {:?}", virt, phys);
-    }
+    let page_ptr: *mut u64 = page.start_address().as_mut_ptr();
+    unsafe { page_ptr.offset(400).write_volatile(0x_f021_f077_f065_f04e) };
+
+    println!("It did not crash!");
+
+    #[cfg(test)]
+    test_main();
+
 
     #[cfg(test)]
     test_main();
