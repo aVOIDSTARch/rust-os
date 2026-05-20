@@ -8,8 +8,11 @@
 
 
 use crusty_os::println;
-
 use bootloader::{BootInfo, entry_point};
+
+extern crate alloc;
+
+use alloc::{boxed::Box, rc::Rc, vec::Vec, vec};
 
 entry_point!(kernel_main);
 
@@ -17,6 +20,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use crusty_os::memory;
     use x86_64::{structures::paging::Page, VirtAddr};
     use crusty_os::memory::BootInfoFrameAllocator;
+    use crusty_os::allocator;
 
     println!("Hello World{}", "!");
 
@@ -27,22 +31,25 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
 
-     // Map the page containing the VGA text buffer to an unused virtual address.
-    let page = Page::containing_address(VirtAddr::new(0xdeadbeaf000));
-    memory::create_example_mapping(page, &mut mapper, &mut frame_allocator);
+    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
-    let page_ptr: *mut u64 = page.start_address().as_mut_ptr();
-    unsafe { page_ptr.offset(400).write_volatile(0x_f021_f077_f065_f04e) };
+    let heap_value = Box::new(41);
+    println!("heap_value at {:p}", heap_value);
+
+    let mut vec = Vec::new();
+    for i in 0..500 {
+        vec.push(i);
+    }
+    println!("vec at {:p}", vec.as_slice());
+
+    // create a reference counted vector -> will be freed when count reaches 0
+    let reference_counted = Rc::new(vec![1, 2, 3]);
+    let cloned_reference = reference_counted.clone();
+    println!("current reference count is {}", Rc::strong_count(&cloned_reference));
+    core::mem::drop(reference_counted);
+    println!("current reference count is {}", Rc::strong_count(&cloned_reference));
 
     println!("It did not crash!");
-
-    #[cfg(test)]
-    test_main();
-
-
-    #[cfg(test)]
-    test_main();
-
 
     #[cfg(test)]
     test_main();
