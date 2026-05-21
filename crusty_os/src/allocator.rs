@@ -1,8 +1,6 @@
 // Allocator for heap memory management
 
-use alloc::alloc::{GlobalAlloc, Layout};
-use core::ptr::null_mut;
-use linked_list_allocator::LockedHeap;
+use bump::BumpAllocator;
 
 use x86_64::{
     structures::paging::{
@@ -11,20 +9,10 @@ use x86_64::{
     VirtAddr,
 };
 
+pub mod bump;
+
 #[global_allocator]
-static ALLOCATOR: LockedHeap = LockedHeap::empty();
-
-pub struct Dummy;
-
-unsafe impl GlobalAlloc for Dummy {
-    unsafe fn alloc(&self, _layout: Layout) -> *mut u8 {
-        null_mut()
-    }
-
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-        panic!("dealloc should be never called")
-    }
-}
+static ALLOCATOR: Locked<BumpAllocator> = Locked::new(BumpAllocator::new());
 
 pub const HEAP_START: usize = 0x_4444_4444_0000;
 pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB
@@ -52,4 +40,28 @@ pub fn init_heap(
         ALLOCATOR.lock().init(HEAP_START, HEAP_SIZE);
     }
     Ok(())
+}
+
+// A wrapper around spin::Mutex to make it Sync and usable as a global allocator.
+pub struct Locked<A> {
+    inner: spin::Mutex<A>,
+}
+
+impl<A> Locked<A> {
+    pub const fn new(inner: A) -> Self {
+        Locked {
+            inner: spin::Mutex::new(inner),
+        }
+    }
+
+    pub fn lock(&self) -> spin::MutexGuard<'_, A> {
+        self.inner.lock()
+    }
+}
+
+/// Align the given address `addr` upwards to alignment `align`.
+///
+/// Requires that `align` is a power of two.
+fn align_up(addr: usize, align: usize) -> usize {
+    (addr + align - 1) & !(align - 1)
 }

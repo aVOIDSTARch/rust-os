@@ -18,7 +18,7 @@ entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use crusty_os::memory;
-    use x86_64::{structures::paging::Page, VirtAddr};
+    use x86_64::VirtAddr;
     use crusty_os::memory::BootInfoFrameAllocator;
     use crusty_os::allocator;
 
