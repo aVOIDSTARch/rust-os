@@ -3,5 +3,8 @@ name    = "xtask"
 version = "0.1.0"
 edition = "2024"
 
+# Opt out of the workspace: xtask targets the host, not the bare-metal cross target.
+[workspace]
+
 # xtask runs on the host (macOS/Linux) — no special dependencies needed.
 # It shells out to cargo, nasm, grub-mkrescue / docker, and qemu.

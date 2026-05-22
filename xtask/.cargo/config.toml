@@ -1,3 +1,9 @@
-# Build xtask for the host, not the baremetal target set workspace-wide.
+# Build xtask for the host, overriding the workspace-wide bare-metal target.
+# build-std and json-target-spec are also cleared so the host's pre-built std is used.
 [build]
 target = "aarch64-apple-darwin"
+
+[unstable]
+build-std = []
+build-std-features = []
+json-target-spec = false
