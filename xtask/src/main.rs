@@ -206,19 +206,18 @@ fn run_qemu() {
     let iso = workspace_root().join("barnacle.iso");
     assert!(iso.exists(), "barnacle.iso not found; run `cargo xtask iso` first");
 
-    let status = Command::new("qemu-system-x86_64")
+    Command::new("qemu-system-x86_64")
         .args([
             "-cdrom",    iso.to_str().unwrap(),
             "-serial",   "stdio",
             "-no-reboot",
             "-no-shutdown",
             "-m",        "128M",
-            "-display",  "none",
         ])
-        .status()
+        .spawn()
         .expect("qemu-system-x86_64 failed to start");
 
-    std::process::exit(status.code().unwrap_or(1));
+    println!("QEMU launched — close the window when done.");
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
