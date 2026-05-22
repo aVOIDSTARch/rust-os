@@ -10,6 +10,7 @@ use x86_64::{
 };
 
 pub mod bump;
+pub mod linked_list;
 
 #[global_allocator]
 static ALLOCATOR: Locked<BumpAllocator> = Locked::new(BumpAllocator::new());

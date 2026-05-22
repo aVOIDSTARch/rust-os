@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux x86_64 ABI — Kernel Implementation Guide</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap');
+
+  :root {
+    --bg:        #0a0c0f;
+    --bg2:       #111318;
+    --bg3:       #181c22;
+    --border:    #252932;
+    --accent:    #e8c547;
+    --accent2:   #5c9cf5;
+    --accent3:   #e05c5c;
+    --text:      #c8cdd6;
+    --text-dim:  #6b7280;
+    --text-head: #eef0f3;
+    --mono:      'IBM Plex Mono', monospace;
+    --sans:      'IBM Plex Sans', sans-serif;
+    --serif:     'DM Serif Display', serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  /* ── Grid noise background ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(232,197,71,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232,197,71,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Layout ── */
+  .shell {
+    position: relative;
+    z-index: 1;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 64px 0 48px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 48px;
+  }
+
+  .label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .label::before {
+    content: '';
+    display: inline-block;
+    width: 28px;
+    height: 1px;
+    background: var(--accent);
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    color: var(--text-head);
+    line-height: 1.15;
+    margin-bottom: 20px;
+  }
+  h1 em {
+    color: var(--accent);
+    font-style: italic;
+  }
+
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 14px;
+    font-family: var(--mono);
+    max-width: 600px;
+  }
+
+  /* ── TOC ── */
+  .toc {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    padding: 28px 32px;
+    margin-bottom: 56px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .toc-title {
+    color: var(--accent);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .toc ol { padding-left: 20px; }
+  .toc li { margin: 6px 0; }
+  .toc a { color: var(--text-dim); text-decoration: none; transition: color 0.15s; }
+  .toc a:hover { color: var(--accent); }
+  .toc ol ol { margin-top: 4px; }
+  .toc ol ol li { margin: 3px 0; }
+  .toc ol ol a { color: #444d5c; }
+  .toc ol ol a:hover { color: var(--accent); }
+
+  /* ── Sections ── */
+  section {
+    margin-bottom: 64px;
+    scroll-margin-top: 24px;
+  }
+
+  h2 {
+    font-family: var(--serif);
+    font-size: 1.75rem;
+    color: var(--text-head);
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+  h2 .num {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    flex-shrink: 0;
+  }
+
+  h3 {
+    font-family: var(--sans);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-head);
+    margin: 28px 0 12px;
+    letter-spacing: 0.01em;
+  }
+
+  p { margin-bottom: 14px; }
+
+  /* ── Code blocks ── */
+  pre {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent2);
+    padding: 20px 24px;
+    overflow-x: auto;
+    margin: 16px 0 24px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    color: #a8b5c8;
+  }
+  pre .c  { color: var(--text-dim); font-style: italic; }
+  pre .k  { color: var(--accent2); }
+  pre .s  { color: #7ec99a; }
+  pre .n  { color: var(--accent); }
+  pre .r  { color: var(--accent3); }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.875em;
+    background: var(--bg3);
+    color: var(--accent2);
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+  }
+
+  /* ── Tables ── */
+  .table-wrap { overflow-x: auto; margin: 16px 0 28px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  th {
+    background: var(--bg3);
+    color: var(--accent);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 10px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: top;
+  }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  td:first-child { color: var(--accent2); }
+
+  /* ── Callouts ── */
+  .callout {
+    padding: 18px 22px;
+    margin: 20px 0;
+    border: 1px solid;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .callout.warn  { background: rgba(224,92,92,0.07);  border-color: rgba(224,92,92,0.3);  color: #e8a5a5; }
+  .callout.info  { background: rgba(92,156,245,0.07); border-color: rgba(92,156,245,0.3); color: #9bbfee; }
+  .callout.tip   { background: rgba(232,197,71,0.06); border-color: rgba(232,197,71,0.25);color: #d4b84a; }
+  .callout-head  { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 8px; font-weight: 600; }
+
+  /* ── Reference cards ── */
+  .refs {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .ref-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 20px;
+    transition: border-color 0.2s, transform 0.15s;
+    text-decoration: none;
+    display: block;
+  }
+  .ref-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .ref-kind {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .ref-kind.spec     { color: var(--accent); }
+  .ref-kind.tutorial { color: var(--accent2); }
+  .ref-kind.book     { color: #9b7ef5; }
+  .ref-kind.tool     { color: #5cc99b; }
+  .ref-title {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-head);
+    margin-bottom: 6px;
+  }
+  .ref-desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .ref-url {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--border);
+    margin-top: 10px;
+    word-break: break-all;
+  }
+
+  /* ── Phase timeline ── */
+  .phases { margin: 20px 0; }
+  .phase {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 0;
+    position: relative;
+  }
+  .phase:not(:last-child) .phase-line {
+    position: absolute;
+    left: 19px;
+    top: 40px;
+    bottom: -16px;
+    width: 1px;
+    background: var(--border);
+  }
+  .phase-num {
+    width: 38px;
+    height: 38px;
+    background: var(--bg3);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    margin-top: 4px;
+  }
+  .phase-body { padding-bottom: 32px; }
+  .phase-title { font-weight: 600; color: var(--text-head); margin-bottom: 6px; font-size: 15px; }
+  .phase-desc { font-size: 14px; color: var(--text-dim); }
+
+  /* ── Inline tag ── */
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border: 1px solid currentColor;
+    margin-left: 8px;
+    vertical-align: middle;
+    position: relative;
+    top: -1px;
+  }
+  .tag.free { color: #5cc99b; }
+  .tag.paid { color: #e8a5a5; }
+  .tag.rust { color: var(--accent2); }
+
+  ul, ol { padding-left: 20px; margin-bottom: 14px; }
+  li { margin-bottom: 6px; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding-top: 28px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header>
+    <div class="label">Kernel Development Reference</div>
+    <h1>Implementing the <em>Linux x86_64 ABI</em><br>in a Hobby Operating System</h1>
+    <p class="subtitle">// syscall table · ELF loader · calling convention · register layout · musl integration</p>
+  </header>
+
+  <nav class="toc">
+    <div class="toc-title">// Table of Contents</div>
+    <ol>
+      <li><a href="#s1">What the ABI Actually Is</a></li>
+      <li><a href="#s2">x86_64 Calling Convention</a>
+        <ol>
+          <li><a href="#s2a">Register Assignments</a></li>
+          <li><a href="#s2b">Stack Frame Layout</a></li>
+          <li><a href="#s2c">Return Values</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">The Syscall Interface</a>
+        <ol>
+          <li><a href="#s3a">Mechanism: syscall / sysret</a></li>
+          <li><a href="#s3b">Minimum Viable Syscall Table</a></li>
+          <li><a href="#s3c">Implementing Dispatch in Rust</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">The ELF Loader</a>
+        <ol>
+          <li><a href="#s4a">ELF Header Parsing</a></li>
+          <li><a href="#s4b">Program Header Processing</a></li>
+          <li><a href="#s4c">Initial Stack Setup</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">Userspace Transition</a></li>
+      <li><a href="#s6">Musl Integration</a></li>
+      <li><a href="#s7">Implementation Phases</a></li>
+      <li><a href="#s8">References &amp; Resources</a></li>
+    </ol>
+  </nav>
+
+  <!-- ── 1 ── -->
+  <section id="s1">
+    <h2><span class="num">01 //</span> What the ABI Actually Is</h2>
+    <p>The Linux x86_64 ABI is not a single document — it is the intersection of three specifications that together define how userspace programs communicate with the kernel and with each other:</p>
+    <ul>
+      <li><strong>System V AMD64 ABI</strong> — defines the calling convention, register usage, stack alignment, and object file format that all compiled code on x86_64 Linux follows.</li>
+      <li><strong>Linux syscall ABI</strong> — defines the specific syscall numbers, argument passing registers, and return value conventions that the kernel exposes. This is separate from the above and deliberately stable.</li>
+      <li><strong>ELF specification</strong> — defines the binary format the kernel's loader must parse to map a program into memory and begin execution.</li>
+    </ul>
+    <div class="callout tip">
+      <div class="callout-head">// Key insight</div>
+      If your kernel correctly implements these three layers, any statically linked musl binary — whether compiled from C, Rust, Go, or Zig — will execute on your OS without modification.
+    </div>
+  </section>
+
+  <!-- ── 2 ── -->
+  <section id="s2">
+    <h2><span class="num">02 //</span> x86_64 Calling Convention</h2>
+
+    <p>The System V AMD64 ABI governs how compiled functions pass arguments, return values, and manage the stack. You must understand this to correctly implement syscall entry/exit and userspace context switching.</p>
+
+    <h3 id="s2a">Register Assignments</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Register</th><th>Role</th><th>Preserved Across Calls?</th></tr></thead>
+        <tbody>
+          <tr><td>rax</td><td>Return value / syscall number</td><td>No (caller-saved)</td></tr>
+          <tr><td>rdi</td><td>Argument 1</td><td>No</td></tr>
+          <tr><td>rsi</td><td>Argument 2</td><td>No</td></tr>
+          <tr><td>rdx</td><td>Argument 3</td><td>No</td></tr>
+          <tr><td>rcx</td><td>Argument 4 (function calls) / clobbered by syscall</td><td>No</td></tr>
+          <tr><td>r8</td><td>Argument 5</td><td>No</td></tr>
+          <tr><td>r9</td><td>Argument 6</td><td>No</td></tr>
+          <tr><td>r10</td><td>Argument 4 (syscalls, replaces rcx)</td><td>No</td></tr>
+          <tr><td>rbx</td><td>General purpose</td><td>Yes (callee-saved)</td></tr>
+          <tr><td>rbp</td><td>Frame pointer (optional)</td><td>Yes</td></tr>
+          <tr><td>r12–r15</td><td>General purpose</td><td>Yes (callee-saved)</td></tr>
+          <tr><td>rsp</td><td>Stack pointer</td><td>Yes (callee-saved)</td></tr>
+          <tr><td>rflags</td><td>CPU flags</td><td>Partially (DF must be clear)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-head">// Syscall vs function call difference</div>
+      The <code>syscall</code> instruction clobbers <code>rcx</code> (saves RIP into it) and <code>r11</code> (saves RFLAGS). Syscall argument 4 therefore uses <code>r10</code>, not <code>rcx</code> as in normal function calls. This is a frequent source of bugs.
+    </div>
+
+    <h3 id="s2b">Stack Frame Layout</h3>
+    <p>The stack must be 16-byte aligned immediately before a <code>call</code> instruction (the <code>call</code> itself pushes 8 bytes, leaving RSP 16-byte aligned at function entry). Violation causes <code>#GP</code> faults from SSE instructions.</p>
+
+    <pre><span class="c">; Stack layout on function entry (after call, before prologue)</span>
+<span class="c">; rsp+0  : return address (8 bytes)</span>
+<span class="c">; rsp+8  : (potential padding to maintain 16-byte alignment)</span>
+<span class="c">; rsp+16 : first stack argument (if >6 args)</span>
+
+<span class="c">; Typical function prologue</span>
+<span class="k">push</span> rbp
+<span class="k">mov</span>  rbp, rsp
+<span class="k">sub</span>  rsp, <span class="n">N</span>        <span class="c">; allocate locals, N must keep rsp 16-byte aligned</span></pre>
+
+    <h3 id="s2c">Return Values</h3>
+    <ul>
+      <li>Integer/pointer return values: <code>rax</code> (64-bit), optionally <code>rdx:rax</code> (128-bit)</li>
+      <li>Floating point: <code>xmm0</code>, optionally <code>xmm1</code></li>
+      <li>Structs ≤16 bytes: split across <code>rax</code> + <code>rdx</code> per classification rules</li>
+      <li>Structs &gt;16 bytes: caller passes a hidden pointer in <code>rdi</code>; callee writes to it</li>
+    </ul>
+    <p>For syscalls: return value in <code>rax</code>. On error, kernel returns <code>-errno</code> (a negative value). Libc wrappers detect this, negate it, and set the <code>errno</code> thread-local.</p>
+  </section>
+
+  <!-- ── 3 ── -->
+  <section id="s3">
+    <h2><span class="num">03 //</span> The Syscall Interface</h2>
+
+    <h3 id="s3a">Mechanism: syscall / sysret</h3>
+    <p>On x86_64, system calls use the <code>syscall</code> instruction (not the legacy <code>int 0x80</code> which is 32-bit). The CPU uses MSRs to find the kernel entry point:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>MSR</th><th>Name</th><th>Value to write</th></tr></thead>
+        <tbody>
+          <tr><td>0xC0000081</td><td>STAR</td><td>Sets CS/SS selectors for user/kernel mode</td></tr>
+          <tr><td>0xC0000082</td><td>LSTAR</td><td>Address of your syscall entry point</td></tr>
+          <tr><td>0xC0000084</td><td>SFMASK</td><td>RFLAGS bits to clear on syscall entry (set bit 9 to disable interrupts)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <pre><span class="c">; What the CPU does on syscall instruction:</span>
+<span class="c">;  rcx ← rip (return address)</span>
+<span class="c">;  r11 ← rflags</span>
+<span class="c">;  rip ← LSTAR value (your handler)</span>
+<span class="c">;  cs  ← STAR[47:32] (kernel CS)</span>
+<span class="c">;  rflags &= ~SFMASK</span>
+<span class="c">;</span>
+<span class="c">; On sysretq:</span>
+<span class="c">;  rip    ← rcx</span>
+<span class="c">;  rflags ← r11</span>
+<span class="c">;  cs     ← STAR[63:48] (user CS)</span></pre>
+
+    <div class="callout warn">
+      <div class="callout-head">// Spectre / swapgs mitigation</div>
+      On entry, you must swap GS with <code>swapgs</code> to access per-CPU kernel data. You must do this before accessing any kernel data via GS-relative addressing, and must not do it twice. Mitigation for Spectre variant 1 requires careful ordering around this instruction.
+    </div>
+
+    <pre><span class="c">; Minimal syscall entry stub (NASM syntax)</span>
+syscall_entry:
+    <span class="k">swapgs</span>
+    <span class="k">mov</span>  [gs:<span class="n">user_rsp_offset</span>], rsp   <span class="c">; save user stack</span>
+    <span class="k">mov</span>  rsp, [gs:<span class="n">kernel_rsp_offset</span>]  <span class="c">; load kernel stack</span>
+
+    <span class="c">; Push registers to form a trapframe</span>
+    <span class="k">push</span> rcx        <span class="c">; saved rip</span>
+    <span class="k">push</span> r11        <span class="c">; saved rflags</span>
+    <span class="k">push</span> rbp
+    <span class="k">push</span> rbx
+    <span class="c">; ... etc</span>
+
+    <span class="c">; rax = syscall number, dispatch</span>
+    <span class="k">call</span> syscall_dispatch
+
+    <span class="c">; Restore and return</span>
+    <span class="k">pop</span>  rbx
+    <span class="k">pop</span>  rbp
+    <span class="k">pop</span>  r11
+    <span class="k">pop</span>  rcx
+    <span class="k">mov</span>  rsp, [gs:<span class="n">user_rsp_offset</span>]
+    <span class="k">swapgs</span>
+    <span class="k">sysretq</span></pre>
+
+    <h3 id="s3b">Minimum Viable Syscall Table</h3>
+    <p>The following syscalls are sufficient to run a statically-linked musl Rust binary that allocates memory, prints to stdout, and exits cleanly. Implement these first, in roughly this order:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Number</th><th>Name</th><th>Signature</th><th>Priority</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>read</td><td>read(fd, buf*, count)</td><td>Core I/O</td></tr>
+          <tr><td>1</td><td>write</td><td>write(fd, buf*, count)</td><td>Core I/O</td></tr>
+          <tr><td>3</td><td>close</td><td>close(fd)</td><td>Core I/O</td></tr>
+          <tr><td>9</td><td>mmap</td><td>mmap(addr, len, prot, flags, fd, off)</td><td>Allocator</td></tr>
+          <tr><td>10</td><td>mprotect</td><td>mprotect(addr, len, prot)</td><td>Allocator</td></tr>
+          <tr><td>11</td><td>munmap</td><td>munmap(addr, len)</td><td>Allocator</td></tr>
+          <tr><td>12</td><td>brk</td><td>brk(addr)</td><td>Allocator</td></tr>
+          <tr><td>13</td><td>rt_sigaction</td><td>rt_sigaction(sig, act*, oact*, size)</td><td>Runtime</td></tr>
+          <tr><td>60</td><td>exit</td><td>exit(code)</td><td>Critical</td></tr>
+          <tr><td>231</td><td>exit_group</td><td>exit_group(code)</td><td>Critical</td></tr>
+          <tr><td>96</td><td>gettimeofday</td><td>gettimeofday(tv*, tz*)</td><td>Time</td></tr>
+          <tr><td>228</td><td>clock_gettime</td><td>clock_gettime(clk, tp*)</td><td>Time</td></tr>
+          <tr><td>318</td><td>getrandom</td><td>getrandom(buf*, len, flags)</td><td>Entropy</td></tr>
+          <tr><td>56</td><td>clone</td><td>clone(flags, stack, ptid, ctid, regs)</td><td>Threads</td></tr>
+          <tr><td>202</td><td>futex</td><td>futex(uaddr*, op, val, ...)</td><td>Threads</td></tr>
+          <tr><td>186</td><td>gettid</td><td>gettid()</td><td>Threads</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="s3c">Implementing Dispatch in Rust</h3>
+    <pre><span class="c">// In your kernel (Rust)</span>
+<span class="c">// Called from your assembly entry stub with the trapframe</span>
+
+<span class="k">pub</span> <span class="k">extern</span> <span class="s">"C"</span> <span class="k">fn</span> <span class="n">syscall_dispatch</span>(frame: &amp;<span class="k">mut</span> TrapFrame) {
+    <span class="k">let</span> result = <span class="k">match</span> frame.rax {
+        0  =&gt; sys_read(frame.rdi <span class="k">as</span> i32,
+                       frame.rsi <span class="k">as</span> *<span class="k">mut</span> u8,
+                       frame.rdx <span class="k">as</span> usize),
+        1  =&gt; sys_write(frame.rdi <span class="k">as</span> i32,
+                        frame.rsi <span class="k">as</span> *<span class="k">const</span> u8,
+                        frame.rdx <span class="k">as</span> usize),
+        9  =&gt; sys_mmap(frame.rdi, frame.rsi <span class="k">as</span> usize,
+                       frame.rdx <span class="k">as</span> i32, frame.r10 <span class="k">as</span> i32,
+                       frame.r8 <span class="k">as</span> i32, frame.r9 <span class="k">as</span> i64),
+        60 | 231 =&gt; sys_exit(frame.rdi <span class="k">as</span> i32),
+        n  =&gt; {
+            <span class="c">// Return ENOSYS for unimplemented calls</span>
+            Err(Errno::ENOSYS)
+        }
+    };
+    frame.rax = <span class="k">match</span> result {
+        Ok(v)  =&gt; v <span class="k">as</span> u64,
+        Err(e) =&gt; (-(e <span class="k">as</span> i64)) <span class="k">as</span> u64,
+    };
+}</pre>
+  </section>
+
+  <!-- ── 4 ── -->
+  <section id="s4">
+    <h2><span class="num">04 //</span> The ELF Loader</h2>
+
+    <p>The ELF loader runs in kernel context when a process calls <code>execve</code>. It must: parse the binary, map segments into the new process address space, set up the initial stack with arguments and auxiliary vectors, then jump to userspace.</p>
+
+    <h3 id="s4a">ELF Header Parsing</h3>
+    <pre><span class="c">// ELF64 header — first 64 bytes of every ELF binary</span>
+<span class="c">// Validate these fields before proceeding</span>
+
+e_ident[0..4]  == [0x7f, b'E', b'L', b'F']  <span class="c">// magic</span>
+e_ident[4]     == 2     <span class="c">// EI_CLASS: 64-bit</span>
+e_ident[5]     == 1     <span class="c">// EI_DATA: little-endian</span>
+e_ident[6]     == 1     <span class="c">// EI_VERSION</span>
+e_type         == 2     <span class="c">// ET_EXEC (static) or 3 = ET_DYN (PIE)</span>
+e_machine      == 0x3E  <span class="c">// EM_X86_64</span>
+e_entry              <span class="c">// virtual address of _start</span>
+e_phoff              <span class="c">// offset to program header table</span>
+e_phentsize          <span class="c">// size of one program header entry</span>
+e_phnum              <span class="c">// number of program headers</span></pre>
+
+    <h3 id="s4b">Program Header Processing</h3>
+    <p>Iterate program headers. You care about two types:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>p_type value</th><th>Name</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>PT_LOAD</td><td>Map this segment into the process address space</td></tr>
+          <tr><td>3</td><td>PT_INTERP</td><td>Path to dynamic linker — skip for static binaries</td></tr>
+          <tr><td>4</td><td>PT_NOTE</td><td>Ignore</td></tr>
+          <tr><td>6</td><td>PT_PHDR</td><td>Location of program header table itself</td></tr>
+          <tr><td>7</td><td>PT_TLS</td><td>Thread-local storage template</td></tr>
+          <tr><td>0x6474e551</td><td>PT_GNU_STACK</td><td>Stack permissions (check PF_X — exec stack)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>For each <code>PT_LOAD</code> segment, the mapping logic is:</p>
+    <pre><span class="c">// For each PT_LOAD segment:</span>
+<span class="k">let</span> vaddr_page  = p_vaddr &amp; !0xFFF;         <span class="c">// round down to page</span>
+<span class="k">let</span> offset_page = p_offset &amp; !0xFFF;
+<span class="k">let</span> map_size    = p_vaddr + p_memsz - vaddr_page;
+
+<span class="c">// 1. Map the file content (p_filesz bytes)</span>
+mmap(vaddr_page, file_aligned_size, prot, MAP_PRIVATE|MAP_FIXED, fd, offset_page);
+
+<span class="c">// 2. Zero the BSS: bytes between p_filesz and p_memsz</span>
+<span class="k">if</span> p_memsz &gt; p_filesz {
+    <span class="k">let</span> bss_start = p_vaddr + p_filesz;
+    memset(bss_start, 0, p_memsz - p_filesz);
+}
+
+<span class="c">// Permission flags: p_flags</span>
+<span class="c">// PF_R = 4, PF_W = 2, PF_X = 1  →  PROT_READ=1, PROT_WRITE=2, PROT_EXEC=4</span></pre>
+
+    <h3 id="s4c">Initial Stack Setup</h3>
+    <p>The kernel must construct the initial userspace stack before jumping to <code>_start</code>. The layout is defined by the ABI and expected by every libc startup routine:</p>
+
+    <pre><span class="c">; Stack layout at process entry (grows downward, rsp points to top)</span>
+<span class="c">;</span>
+<span class="c">; [rsp+0]       argc                 (8 bytes, u64)</span>
+<span class="c">; [rsp+8]       argv[0]              (pointer to string)</span>
+<span class="c">; ...           argv[argc-1]</span>
+<span class="c">; [rsp+...]     NULL                 (argv terminator)</span>
+<span class="c">; [rsp+...]     envp[0]              (pointer to string)</span>
+<span class="c">; ...           envp[N-1]</span>
+<span class="c">; [rsp+...]     NULL                 (envp terminator)</span>
+<span class="c">; [rsp+...]     AT_type, AT_value    (auxiliary vector pairs)</span>
+<span class="c">; ...                                (multiple entries)</span>
+<span class="c">; [rsp+...]     AT_NULL, 0           (auxv terminator)</span>
+<span class="c">; [rsp+...]     string data (argv/envp contents)</span>
+<span class="c">;</span>
+<span class="c">; rsp must be 16-byte aligned at entry</span></pre>
+
+    <p>Critical auxiliary vector entries (<code>AT_*</code>) that musl and the Rust runtime depend on:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>AT_ constant</th><th>Value</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>AT_PHDR</td><td>3</td><td>Virtual address of ELF program headers</td></tr>
+          <tr><td>AT_PHENT</td><td>4</td><td>Size of one program header entry</td></tr>
+          <tr><td>AT_PHNUM</td><td>5</td><td>Number of program headers</td></tr>
+          <tr><td>AT_PAGESZ</td><td>6</td><td>System page size (4096)</td></tr>
+          <tr><td>AT_BASE</td><td>7</td><td>Load address of interpreter (0 if static)</td></tr>
+          <tr><td>AT_ENTRY</td><td>9</td><td>Entry point of the executable</td></tr>
+          <tr><td>AT_UID</td><td>11</td><td>Real user ID</td></tr>
+          <tr><td>AT_GID</td><td>13</td><td>Real group ID</td></tr>
+          <tr><td>AT_RANDOM</td><td>25</td><td>Pointer to 16 random bytes (for stack canary)</td></tr>
+          <tr><td>AT_NULL</td><td>0</td><td>Terminator — must be last</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 5 ── -->
+  <section id="s5">
+    <h2><span class="num">05 //</span> Userspace Transition</h2>
+
+    <p>After loading the ELF and constructing the stack, you must transfer control to userspace without using a normal function call (which would execute in ring 0). Two approaches:</p>
+
+    <h3>Using iretq (simpler)</h3>
+    <pre><span class="c">; Push a fake interrupt frame and iret into userspace</span>
+<span class="c">; This works regardless of whether LSTAR is set up yet</span>
+
+<span class="k">push</span> <span class="n">user_ss</span>       <span class="c">; SS (user data segment selector)</span>
+<span class="k">push</span> <span class="n">user_rsp</span>      <span class="c">; RSP (initial stack pointer)</span>
+<span class="k">push</span> <span class="n">rflags</span>        <span class="c">; RFLAGS (typically 0x202 — IF set)</span>
+<span class="k">push</span> <span class="n">user_cs</span>       <span class="c">; CS (user code segment selector)</span>
+<span class="k">push</span> <span class="n">entry_point</span>   <span class="c">; RIP (_start virtual address)</span>
+<span class="k">iretq</span></pre>
+
+    <h3>Using sysretq (faster, but constraints)</h3>
+    <pre><span class="c">; Requires STAR MSR to be configured</span>
+<span class="c">; rcx must hold the target RIP</span>
+<span class="c">; r11 must hold target RFLAGS</span>
+<span class="c">; rsp must already be the user stack pointer</span>
+<span class="k">mov</span>  rcx, <span class="n">entry_point</span>
+<span class="k">mov</span>  r11, <span class="n">0x202</span>       <span class="c">; RFLAGS: IF=1, reserved bit 1</span>
+<span class="k">mov</span>  rsp, <span class="n">user_rsp</span>
+<span class="k">swapgs</span>
+<span class="k">sysretq</span></pre>
+
+    <div class="callout info">
+      <div class="callout-head">// Recommendation</div>
+      Use <code>iretq</code> for your first implementation — it is simpler and less error-prone. The GDT segment selectors for user CS/SS must have DPL=3 (ring 3). A typical setup: kernel CS=0x08, kernel SS=0x10, user CS=0x18|3=0x1b, user SS=0x20|3=0x23.
+    </div>
+  </section>
+
+  <!-- ── 6 ── -->
+  <section id="s6">
+    <h2><span class="num">06 //</span> Musl Integration</h2>
+
+    <p>Musl is the libc you want for this. It is small, auditable, and explicitly designed for new OS targets. The integration surface is just your syscall table.</p>
+
+    <h3>Building a musl-linked Rust binary targeting your OS</h3>
+    <pre><span class="c"># Option A: Use the existing musl target (Linux ABI compatible)</span>
+rustup target add x86_64-unknown-linux-musl
+cargo build --target x86_64-unknown-linux-musl --release
+
+<span class="c"># The resulting binary is fully static, no dynamic linker needed</span>
+file target/x86_64-unknown-linux-musl/release/your_binary
+<span class="c"># → ELF 64-bit LSB executable, statically linked, not stripped</span>
+
+<span class="c"># Verify syscalls it uses:</span>
+strace -e trace=%process,read,write,mmap,brk ./your_binary</pre>
+
+    <h3>What musl's startup does (and what you must support)</h3>
+    <pre><span class="c">// musl's __libc_start_main roughly does this:</span>
+<span class="c">// 1. Reads argc/argv/envp from the stack (your kernel set this up)</span>
+<span class="c">// 2. Calls mmap to set up the thread-local storage area</span>
+<span class="c">// 3. Calls __init_tls() — needs AT_PHDR/AT_PHNUM from auxv</span>
+<span class="c">// 4. Initializes the heap via brk(0) to find current break</span>
+<span class="c">// 5. Calls your main()</span>
+<span class="c">// 6. Calls exit_group(return_value)</span>
+<span class="c">//</span>
+<span class="c">// Bare minimum syscalls for this path: mmap, brk, exit_group</span>
+<span class="c">// Add write for any output at all</span></pre>
+
+    <div class="callout tip">
+      <div class="callout-head">// Test without musl first</div>
+      Write a tiny assembly program that just calls <code>write(1, "ok\n", 3)</code> then <code>exit(0)</code> directly via syscall. If that works, your syscall machinery is sound. Only then bring in a musl binary.
+    </div>
+  </section>
+
+  <!-- ── 7 ── -->
+  <section id="s7">
+    <h2><span class="num">07 //</span> Implementation Phases</h2>
+    <div class="phases">
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-num">1</div>
+        <div class="phase-body">
+          <div class="phase-title">GDT, IDT, TSS — Protected mode infrastructure</div>
+          <div class="phase-desc">Set up ring 0/3 code and data segments. Configure the TSS with your kernel stack address for privilege-level switches. Without this, syscall and iretq are undefined behavior at the hardware level.</div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-num">2</div>
+        <div class="phase-body">
+          <div class="phase-title">Paging — virtual address space</div>
+          <div class="phase-desc">A working 4-level page table setup (PML4 → PDPT → PD → PT). You need to be able to map arbitrary physical pages to arbitrary virtual addresses, set NX bits, and distinguish user/kernel pages via the U/S flag in PTEs.</div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-num">3</div>
+        <div class="phase-body">
+          <div class="phase-title">LSTAR + syscall entry assembly</div>
+          <div class="phase-desc">Write the assembly stub, set the STAR/LSTAR/SFMASK MSRs, implement the first two syscalls: write (so you can see output) and exit_group (so the process terminates cleanly). Test with a hand-assembled binary.</div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-num">4</div>
+        <div class="phase-body">
+          <div class="phase-title">ELF loader (ET_EXEC, static only)</div>
+          <div class="phase-desc">Parse ELF headers, map PT_LOAD segments, build the initial stack with argc/argv/envp/auxv, jump to e_entry via iretq. Load a hand-compiled C "hello world" compiled with musl-gcc -static.</div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-num">5</div>
+        <div class="phase-body">
+          <div class="phase-title">mmap + brk — heap allocator support</div>
+          <div class="phase-desc">Implement the anonymous mmap case (fd=-1, MAP_ANONYMOUS|MAP_PRIVATE). This is the path both musl's malloc and Rust's global allocator use. brk() is simpler but less used by modern libc.</div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-num">6</div>
+        <div class="phase-body">
+          <div class="phase-title">Run a musl-linked Rust binary</div>
+          <div class="phase-desc">cargo build --target x86_64-unknown-linux-musl. A simple program that allocates a Vec, prints to stdout, and exits. If this works, you have a functional ABI implementation.</div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-num">7</div>
+        <div class="phase-body">
+          <div class="phase-title">Threads — clone + futex</div>
+          <div class="phase-desc">Implement clone(CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD) and the futex WAIT/WAKE operations. This unlocks std::thread, Mutex, and the full Rust threading model.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 8 ── -->
+  <section id="s8">
+    <h2><span class="num">08 //</span> References &amp; Resources</h2>
+
+    <h3>Specifications — Primary Sources</h3>
+    <div class="refs">
+      <a class="ref-card" href="https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf" target="_blank">
+        <div class="ref-kind spec">Specification</div>
+        <div class="ref-title">System V AMD64 ABI (PDF)</div>
+        <div class="ref-desc">The canonical document. Calling convention, register usage, ELF extensions, TLS, DWARF — the ground truth for everything on x86_64 Linux.</div>
+        <div class="ref-url">refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf</div>
+      </a>
+      <a class="ref-card" href="https://www.kernel.org/doc/html/latest/x86/x86_64/syscalls-all.html" target="_blank">
+        <div class="ref-kind spec">Specification</div>
+        <div class="ref-title">Linux Syscall Table (x86_64)</div>
+        <div class="ref-desc">Official kernel documentation listing all syscall numbers, entry points, and argument signatures for x86_64.</div>
+        <div class="ref-url">kernel.org/doc/html/latest/x86/x86_64/syscalls-all.html</div>
+      </a>
+      <a class="ref-card" href="https://man7.org/linux/man-pages/man2/syscall.2.html" target="_blank">
+        <div class="ref-kind spec">Reference</div>
+        <div class="ref-title">syscall(2) man page</div>
+        <div class="ref-desc">Documents the architecture-specific calling convention table, including x86_64 register assignments for syscall arguments. Essential reading.</div>
+        <div class="ref-url">man7.org/linux/man-pages/man2/syscall.2.html</div>
+      </a>
+      <a class="ref-card" href="https://wiki.osdev.org/System_V_ABI" target="_blank">
+        <div class="ref-kind spec">Reference</div>
+        <div class="ref-title">OSDev Wiki: System V ABI</div>
+        <div class="ref-desc">Condensed, OS-developer-focused summary of the ABI with emphasis on what matters for kernel implementation.</div>
+        <div class="ref-url">wiki.osdev.org/System_V_ABI</div>
+      </a>
+    </div>
+
+    <h3 style="margin-top: 28px;">ELF Format</h3>
+    <div class="refs">
+      <a class="ref-card" href="https://www.man7.org/linux/man-pages/man5/elf.5.html" target="_blank">
+        <div class="ref-kind spec">Reference</div>
+        <div class="ref-title">elf(5) man page</div>
+        <div class="ref-desc">Complete struct definitions for all ELF headers, program headers, section headers, and symbol tables. The fastest way to look up field offsets.</div>
+        <div class="ref-url">man7.org/linux/man-pages/man5/elf.5.html</div>
+      </a>
+      <a class="ref-card" href="https://wiki.osdev.org/ELF" target="_blank">
+        <div class="ref-kind tutorial">Tutorial</div>
+        <div class="ref-title">OSDev Wiki: ELF</div>
+        <div class="ref-desc">Annotated walkthrough of ELF parsing and loading from a kernel implementer's perspective. Covers the auxv setup in detail.</div>
+        <div class="ref-url">wiki.osdev.org/ELF</div>
+      </a>
+      <a class="ref-card" href="https://linker-and-loader.readthedocs.io/en/latest/" target="_blank">
+        <div class="ref-kind book">Book (free)</div>
+        <div class="ref-title">Linkers and Loaders (online)</div>
+        <div class="ref-desc">John Levine's foundational text on how linkers and loaders work, including ELF internals, relocations, and dynamic linking.</div>
+        <div class="ref-url">linker-and-loader.readthedocs.io</div>
+      </a>
+    </div>
+
+    <h3 style="margin-top: 28px;">x86_64 Architecture &amp; Syscall Mechanism</h3>
+    <div class="refs">
+      <a class="ref-card" href="https://wiki.osdev.org/SYSCALL" target="_blank">
+        <div class="ref-kind tutorial">Tutorial</div>
+        <div class="ref-title">OSDev Wiki: SYSCALL/SYSRET</div>
+        <div class="ref-desc">Step-by-step guide to setting up LSTAR, STAR, SFMASK MSRs and writing a correct syscall entry stub. Includes the GDT segment selector values.</div>
+        <div class="ref-url">wiki.osdev.org/SYSCALL</div>
+      </a>
+      <a class="ref-card" href="https://wiki.osdev.org/Getting_to_Ring_3" target="_blank">
+        <div class="ref-kind tutorial">Tutorial</div>
+        <div class="ref-title">OSDev Wiki: Getting to Ring 3</div>
+        <div class="ref-desc">Walks through the iretq method for jumping to userspace for the first time, with correct GDT setup and stack construction.</div>
+        <div class="ref-url">wiki.osdev.org/Getting_to_Ring_3</div>
+      </a>
+      <a class="ref-card" href="https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html" target="_blank">
+        <div class="ref-kind spec">Specification</div>
+        <div class="ref-title">Intel® 64 Software Developer's Manual</div>
+        <div class="ref-desc">Vol. 2 for SYSCALL/SYSRET instruction details. Vol. 3A for MSR descriptions (STAR=10.8.1, LSTAR, SFMASK). The authoritative hardware reference.</div>
+        <div class="ref-url">intel.com — SDM (free download)</div>
+      </a>
+    </div>
+
+    <h3 style="margin-top: 28px;">Hobby OS Tutorials — Full Walkthroughs</h3>
+    <div class="refs">
+      <a class="ref-card" href="https://os.phil-opp.com/" target="_blank">
+        <div class="ref-kind tutorial">Tutorial <span class="tag free">free</span> <span class="tag rust">rust</span></div>
+        <div class="ref-title">Writing an OS in Rust — Phil Oppermann</div>
+        <div class="ref-desc">The definitive free Rust kernel tutorial. Covers bootloading, paging, heap allocation, and hardware interrupts. Does not implement Linux ABI but establishes all the prerequisite kernel infrastructure you need.</div>
+        <div class="ref-url">os.phil-opp.com</div>
+      </a>
+      <a class="ref-card" href="https://www.youtube.com/@nanobyte-dev" target="_blank">
+        <div class="ref-kind tutorial">Video Series <span class="tag free">free</span></div>
+        <div class="ref-title">Nanobyte — OS Development Series (YouTube)</div>
+        <div class="ref-desc">Video series covering protected mode, paging, memory management, and userspace in C. The concepts map directly to Rust implementations.</div>
+        <div class="ref-url">youtube.com/@nanobyte-dev</div>
+      </a>
+      <a class="ref-card" href="https://github.com/mit-pdos/xv6-public" target="_blank">
+        <div class="ref-kind tool">Reference OS <span class="tag free">free</span></div>
+        <div class="ref-title">xv6 (MIT) — x86 Teaching OS</div>
+        <div class="ref-desc">MIT's teaching OS, small enough to read in a weekend. The syscall implementation, ELF loader, and process management are canonical reference material even though it targets x86 (32-bit).</div>
+        <div class="ref-url">github.com/mit-pdos/xv6-public</div>
+      </a>
+      <a class="ref-card" href="https://github.com/thepowersgang/rust_os" target="_blank">
+        <div class="ref-kind tool">Reference OS <span class="tag free">free</span> <span class="tag rust">rust</span></div>
+        <div class="ref-title">rust_os — Rust Kernel with Linux Syscall Compat</div>
+        <div class="ref-desc">A Rust kernel that implements Linux ABI compatibility. Directly relevant to your goal — the syscall dispatch and ELF loader code are worth studying.</div>
+        <div class="ref-url">github.com/thepowersgang/rust_os</div>
+      </a>
+      <a class="ref-card" href="https://github.com/Andy-Python-Programmer/aero" target="_blank">
+        <div class="ref-kind tool">Reference OS <span class="tag free">free</span> <span class="tag rust">rust</span></div>
+        <div class="ref-title">Aero OS — Rust UNIX-like Kernel</div>
+        <div class="ref-desc">A more complete Rust kernel targeting Linux ABI compatibility. Implements mmap, clone, futex, ELF loading, and runs musl-linked binaries.</div>
+        <div class="ref-url">github.com/Andy-Python-Programmer/aero</div>
+      </a>
+      <a class="ref-card" href="https://serenityos.org/" target="_blank">
+        <div class="ref-kind tool">Reference OS <span class="tag free">free</span></div>
+        <div class="ref-title">SerenityOS</div>
+        <div class="ref-desc">A full POSIX-compatible OS written from scratch in C++. Its syscall implementation, ELF loader, and process model are production-quality reference implementations.</div>
+        <div class="ref-url">serenityos.org / github.com/SerenityOS/serenity</div>
+      </a>
+    </div>
+
+    <h3 style="margin-top: 28px;">Musl Libc</h3>
+    <div class="refs">
+      <a class="ref-card" href="https://musl.libc.org/" target="_blank">
+        <div class="ref-kind tool">Library <span class="tag free">free</span></div>
+        <div class="ref-title">musl libc</div>
+        <div class="ref-desc">The libc to use for this project. The porting guide explains exactly which kernel interfaces it requires. The source is readable and the syscall list is conservative.</div>
+        <div class="ref-url">musl.libc.org</div>
+      </a>
+      <a class="ref-card" href="https://wiki.musl-libc.org/porting-guide" target="_blank">
+        <div class="ref-kind tutorial">Guide <span class="tag free">free</span></div>
+        <div class="ref-title">musl Porting Guide</div>
+        <div class="ref-desc">Documents the exact set of syscalls musl requires, the target triple naming convention, and how to add a new OS target. This is your integration checklist.</div>
+        <div class="ref-url">wiki.musl-libc.org/porting-guide</div>
+      </a>
+    </div>
+
+    <h3 style="margin-top: 28px;">Debugging &amp; Tooling</h3>
+    <div class="refs">
+      <a class="ref-card" href="https://qemu.org" target="_blank">
+        <div class="ref-kind tool">Tool <span class="tag free">free</span></div>
+        <div class="ref-title">QEMU</div>
+        <div class="ref-desc">Run your kernel without hardware. Use <code>-s -S</code> flags to attach GDB and inspect register state at the moment of syscall entry or ELF load. Invaluable.</div>
+        <div class="ref-url">qemu.org</div>
+      </a>
+      <a class="ref-card" href="https://sourceware.org/gdb/onlinedocs/gdb/" target="_blank">
+        <div class="ref-kind tool">Tool <span class="tag free">free</span></div>
+        <div class="ref-title">GDB + QEMU Remote Debug</div>
+        <div class="ref-desc">Connect GDB to QEMU's stub: <code>target remote :1234</code>. Set breakpoints on your syscall handler, inspect the trapframe, examine userspace memory. The fastest way to debug ABI issues.</div>
+        <div class="ref-url">sourceware.org/gdb/onlinedocs/gdb</div>
+      </a>
+      <a class="ref-card" href="https://github.com/nicowillis/syscall-table" target="_blank">
+        <div class="ref-kind tool">Tool <span class="tag free">free</span></div>
+        <div class="ref-title">syscall.sh — Interactive Syscall Table</div>
+        <div class="ref-desc">Interactive syscall reference with argument types, return values, and man page links. Faster than grepping kernel source during development.</div>
+        <div class="ref-url">syscall.sh</div>
+      </a>
+      <a class="ref-card" href="https://man7.org/linux/man-pages/man1/strace.1.html" target="_blank">
+        <div class="ref-kind tool">Tool <span class="tag free">free</span></div>
+        <div class="ref-title">strace</div>
+        <div class="ref-desc">Run your target binary under strace on a real Linux system first. This tells you exactly which syscalls it issues, in what order, with what arguments — your implementation checklist.</div>
+        <div class="ref-url">man7.org/linux/man-pages/man1/strace.1.html</div>
+      </a>
+    </div>
+  </section>
+
+  <footer>
+    <span>Linux x86_64 ABI Implementation Reference</span>
+    <span>Specifications current as of kernel 6.x · ABI document revision 0.99</span>
+  </footer>
+
+</div>
+</body>
+</html>

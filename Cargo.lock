@@ -15,12 +15,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
 
 [[package]]
+name = "bitintr"
+version = "0.1.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41e61761bcd570564ecb5569a8827b280d1ae365c69d25a7dc881ef4e12d2703"
+dependencies = [
+ "rustc_version",
+]
+
+[[package]]
 name = "bitwise"
 version = "0.1.0"
 dependencies = [
  "bootloader",
  "framework",
  "platform",
+]
+
+[[package]]
+name = "bitwise"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87de1e0e5d0d13adbbbc5a91a7700c19805037938509a14b0d80c036c0f94792"
+dependencies = [
+ "bitintr",
+ "rustc_version",
 ]
 
 [[package]]
@@ -33,6 +52,7 @@ checksum = "13f6a8a495d2f93fe3d6eb3a224f9aa749a63cfd746ed03eb5ddcbd00ade7d8f"
 name = "crusty_os"
 version = "0.1.0"
 dependencies = [
+ "bitwise 0.1.1",
  "bootloader",
  "framework",
  "lazy_static",
@@ -101,6 +121,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustc_version"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5f5376ea5e30ce23c03eb77cbe4962b988deead10910c372b226388b594c084"
+dependencies = [
+ "semver",
+]
+
+[[package]]
 name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -111,6 +140,12 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "semver"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4f410fedcf71af0345d7607d246e7ad15faaadd49d240ee3b24e5dc21a820ac"
 
 [[package]]
 name = "spin"
