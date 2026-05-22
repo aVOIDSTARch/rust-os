@@ -1,3 +1,24 @@
+//! x86_64 bare-metal platform glue for the crusty_os workspace.
+//!
+//! Wraps the `uart_16550 0.6` serial driver and the QEMU ISA debug-exit device
+//! into the [`KernelWriter`] interface defined in `framework`, providing the
+//! hardware side of the output/testing infrastructure.
+//!
+//! # Initialization
+//!
+//! Call [`init()`] **exactly once**, before any use of `framework` output macros
+//! or QEMU exit functions.  `init()` performs three steps in order:
+//! 1. Constructs [`QemuSerial`] around `0x3F8` (COM1).
+//! 2. Calls [`framework::register_writer`] with the serial instance.
+//! 3. Calls [`framework::register_panic_hook`] with [`platform_panic`].
+//!
+//! # QEMU exit device
+//!
+//! Uses `iobase = 0xf4` — must match the `-device isa-debug-exit,iobase=0xf4`
+//! QEMU argument in `[package.metadata.bootimage]`.  The device maps writes as:
+//! `host_exit_code = (value << 1) | 1`, so `0x10 → 33` (success) and
+//! `0x11 → 35` (failure).
+
 #![no_std]
 
 use core::fmt;
@@ -9,16 +30,29 @@ use core::panic::PanicInfo;
 
 // ── QEMU exit ─────────────────────────────────────────────────────────────────
 
-/// Exit codes match the iobase configured in .cargo/config.toml:
-/// -device isa-debug-exit,iobase=0xf4,iosize=0x04
-/// QEMU maps: (value << 1) | 1 → host exit code; 0x10 → 33, 0x11 → 35.
+/// QEMU ISA debug-exit codes written to `iobase = 0xf4`.
+///
+/// QEMU maps each write as `host_exit_code = (value << 1) | 1`:
+/// - `Success (0x10)` → host exit code **33**
+/// - `Failure (0x11)` → host exit code **35**
+///
+/// `[package.metadata.bootimage] test-success-exit-code = 33` tells
+/// `bootimage test` which host code means "all tests passed".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum QemuExitCode {
+    /// All tests passed. Maps to host exit code 33.
     Success = 0x10,
+    /// A test or assertion failed. Maps to host exit code 35.
     Failure = 0x11,
 }
 
+/// Write `code` to the QEMU ISA debug-exit port and halt execution.
+///
+/// # Safety
+/// Performs an x86 `OUT` instruction. Safe to call only from bare-metal
+/// x86_64 code running under QEMU with the matching `-device isa-debug-exit`
+/// argument.
 pub fn exit_qemu(code: QemuExitCode) -> ! {
     unsafe {
         let mut port: Port<u32> = Port::new(0xf4);
@@ -27,18 +61,25 @@ pub fn exit_qemu(code: QemuExitCode) -> ! {
     unreachable!()
 }
 
+/// Exit QEMU with [`QemuExitCode::Success`] (host code 33).
 pub fn exit_success() -> ! { exit_qemu(QemuExitCode::Success) }
+
+/// Exit QEMU with [`QemuExitCode::Failure`] (host code 35).
 pub fn exit_failure() -> ! { exit_qemu(QemuExitCode::Failure) }
 
 // ── Serial writer ─────────────────────────────────────────────────────────────
 
+/// UART serial output backed by `uart_16550 0.6`'s `Uart16550Tty<PioBackend>`.
+///
+/// Registered as the global [`KernelWriter`] during [`init()`].
+/// All `framework::kprint!` / `framework::kprintln!` output flows through here.
 pub struct QemuSerial {
     port: Uart16550Tty<PioBackend>,
 }
 
-// Safety: Uart16550Tty<PioBackend> is Send (Uart16550<B>: Send per uart_16550).
-// We assert Sync too because this is single-core bare-metal; init is called
-// exactly once before any other use.
+// Safety: Uart16550Tty<PioBackend>: Send per uart_16550's own impl.
+// Sync is asserted here because we run single-core bare-metal and init()
+// is called exactly once before any other use.
 unsafe impl Send for QemuSerial {}
 unsafe impl Sync for QemuSerial {}
 
@@ -73,8 +114,13 @@ unsafe impl Sync for SerialOnce {}
 
 static SERIAL: SerialOnce = SerialOnce(UnsafeCell::new(None));
 
-// ── Platform panic hook (called by framework's #[panic_handler]) ──────────────
+// ── Platform panic hook ───────────────────────────────────────────────────────
 
+/// Platform panic handler: prints the panic info over serial then exits QEMU.
+///
+/// Installed as the framework panic hook during [`init()`]. When the
+/// `panic_handler` feature of `framework` is enabled (e.g. in `bitwise` QEMU
+/// tests), panics are routed here automatically.
 pub fn platform_panic(info: &PanicInfo) -> ! {
     framework::with_writer(|w| {
         let _ = fmt::write(w, format_args!("\n[PANIC] {}\n", info));
@@ -84,15 +130,18 @@ pub fn platform_panic(info: &PanicInfo) -> ! {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-/// Initialize QEMU serial output and register the platform panic hook.
+/// Initialize the platform: UART, global writer, and panic hook.
 ///
 /// # Safety
-/// Must be called exactly once before any use of framework output macros.
+/// Must be called **exactly once**, before any use of `framework` output macros
+/// or QEMU exit functions. Calling more than once is unsound (double-init of
+/// the UART and aliased `&'static mut` references).
 pub unsafe fn init() {
     let slot: *mut Option<QemuSerial> = SERIAL.0.get();
     unsafe {
         *slot = Some(QemuSerial::new());
-        // Extend to 'static: slot points to static storage, init-once contract.
+        // Extend lifetime to 'static: slot points to static storage and init
+        // is called exactly once, so no other reference to this slot exists.
         let serial_ref: &mut QemuSerial = (*slot).as_mut().unwrap_unchecked();
         let serial: &'static mut QemuSerial = &mut *(serial_ref as *mut QemuSerial);
         register_writer(serial);
