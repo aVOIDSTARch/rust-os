@@ -244,7 +244,7 @@ fn run_qemu() {
             "-no-reboot",
             "-no-shutdown",
             "-m",        "128M",
-            "-display",  "cocoa,zoom=2",
+            "-display",  "cocoa,zoom-to-fit=on",
         ])
         .spawn()
         .expect("qemu-system-x86_64 failed to start");
