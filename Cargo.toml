@@ -1,5 +1,5 @@
 [workspace]
-members = ["framework", "platform", "crusty_os", "bitwise"]
+members = ["framework", "platform", "crusty_os", "bitwise", "crusty_bootloader"]
 resolver = "3"
 
 [profile.dev]
