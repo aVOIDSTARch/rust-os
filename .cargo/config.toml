@@ -1,10 +1,14 @@
 # Workspace-level Cargo config.
-#
-# Per-crate configs (crusty_os/.cargo/config.toml, bitwise/.cargo/config.toml)
-# shadow these settings for their respective crates.
+# All members default to the bare-metal x86_64 target used by crusty_os.
+# Per-crate configs (crusty_os/.cargo/config.toml) shadow these for their crate.
 
-# QEMU runner for x86_64-unknown-none targets — used by `cargo test -p bitwise`.
-# The iobase=0xf4 exit port must match QemuExitCode values in platform/src/lib.rs.
-[target.x86_64-unknown-none]
-runner = "qemu-system-x86_64 -device isa-debug-exit,iobase=0xf4,iosize=0x04 -serial stdio -display none"
-rustflags = ["-C", "target-feature=+sse,+sse2"]
+[build]
+target = "crusty_os/x86_64-crusty_os.json"
+
+[unstable]
+json-target-spec = true
+build-std = ["core", "compiler_builtins", "alloc"]
+build-std-features = ["compiler-builtins-mem"]
+
+[target.'cfg(target_os = "none")']
+runner = "bootimage runner"
