@@ -40,10 +40,8 @@ pub mod interrupts;
 pub mod gdt;
 #[cfg(feature = "use-bootloader")]
 pub mod memory;
-#[cfg(feature = "use-bootloader")]
 pub mod allocator;
 
-#[cfg(feature = "use-bootloader")]
 extern crate alloc;
 
 // ── Re-exports for integration tests ─────────────────────────────────────────

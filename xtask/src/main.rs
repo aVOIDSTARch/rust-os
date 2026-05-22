@@ -177,26 +177,57 @@ fn grub_mkrescue_native(iso_dir: &Path, iso_out: &Path) {
     assert!(status.success(), "grub-mkrescue failed");
 }
 
+const DOCKER_IMAGE: &str = "barnacle-iso-builder:latest";
+
+fn ensure_docker_image() {
+    let exists = Command::new("docker")
+        .args(["image", "inspect", DOCKER_IMAGE])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if exists {
+        return;
+    }
+
+    println!("Building Docker image {DOCKER_IMAGE} (one-time setup) …");
+    let dockerfile = "\
+FROM --platform=linux/amd64 ubuntu:22.04\n\
+RUN apt-get update -qq \
+ && apt-get install -y -qq --no-install-recommends grub-pc-bin xorriso \
+ && rm -rf /var/lib/apt/lists/*\n";
+
+    let mut child = Command::new("docker")
+        .args(["build", "--platform", "linux/amd64", "-t", DOCKER_IMAGE, "-"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("docker build failed to start");
+    child.stdin.take().unwrap().write_all(dockerfile.as_bytes()).unwrap();
+    let status = child.wait().expect("docker build failed");
+    assert!(status.success(), "docker build of {DOCKER_IMAGE} failed");
+}
+
 fn grub_mkrescue_docker(iso_dir: &Path, iso_out: &Path, workspace: &Path) {
-    // Mount workspace root into /work inside the container.
-    let iso_dir_rel  = iso_dir.strip_prefix(workspace).unwrap().to_str().unwrap().to_owned();
-    let iso_out_rel  = iso_out.strip_prefix(workspace).unwrap().to_str().unwrap().to_owned();
-    let mount        = format!("{}:/work", workspace.display());
+    ensure_docker_image();
+
+    let iso_dir_rel = iso_dir.strip_prefix(workspace).unwrap().to_str().unwrap().to_owned();
+    let iso_out_rel = iso_out.strip_prefix(workspace).unwrap().to_str().unwrap().to_owned();
+    let mount       = format!("{}:/work", workspace.display());
 
     let status = Command::new("docker")
         .args([
             "run", "--rm",
             "--platform", "linux/amd64",
             "-v", &mount,
-            "ubuntu:22.04",
-            "sh", "-c",
-            &format!(
-                "apt-get update -qq && apt-get install -y -qq grub-pc-bin xorriso 2>/dev/null \
-                 && grub-mkrescue -o /work/{iso_out_rel} /work/{iso_dir_rel}"
-            ),
+            DOCKER_IMAGE,
+            "grub-mkrescue", "-o",
+            &format!("/work/{iso_out_rel}"),
+            &format!("/work/{iso_dir_rel}"),
         ])
         .status()
-        .expect("docker failed to start");
+        .expect("docker run failed to start");
     assert!(status.success(), "grub-mkrescue via Docker failed");
 }
 
@@ -213,6 +244,7 @@ fn run_qemu() {
             "-no-reboot",
             "-no-shutdown",
             "-m",        "128M",
+            "-display",  "cocoa,zoom=2",
         ])
         .spawn()
         .expect("qemu-system-x86_64 failed to start");

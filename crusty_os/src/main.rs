@@ -36,10 +36,9 @@ fn panic(info: &PanicInfo) -> ! {
     crusty_os::test_panic_handler(info)
 }
 
-// ── Bootloader path ──────────────────────────────────────────────────────────
-
-#[cfg(feature = "use-bootloader")]
 extern crate alloc;
+
+// ── Bootloader path ──────────────────────────────────────────────────────────
 
 #[cfg(feature = "use-bootloader")]
 fn kmain(boot_info: &'static bootloader::BootInfo) -> ! {
@@ -87,15 +86,16 @@ fn kmain(boot_info: &'static bootloader::BootInfo) -> ! {
 
 #[cfg(feature = "use-barnacle")]
 fn kmain(boot_info: &'static barnacle::BootInfo) -> ! {
+    use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};
+    use crusty_os::allocator;
+
     unsafe { platform::init(); }
 
     println!("Hello from barnacle!");
 
     crusty_os::init();
 
-    // Physical memory layout via Multiboot2 memory map.
-    // Full memory init (mapper + heap) is a follow-up once crusty_os's memory
-    // module is ported away from bootloader's physical_memory_offset.
+    // Print the Multiboot2 physical memory map.
     if let Some(memory_map) = boot_info.memory_map() {
         for area in memory_map.memory_areas() {
             println!(
@@ -105,6 +105,25 @@ fn kmain(boot_info: &'static barnacle::BootInfo) -> ! {
             );
         }
     }
+
+    // Heap lives in the pre-mapped 2 MB window (boot.asm huge page).
+    // No additional page-table manipulation needed.
+    allocator::init_heap_barnacle();
+
+    let heap_value = Box::new(41);
+    println!("heap_value at {:p}", heap_value);
+
+    let mut vec = Vec::new();
+    for i in 0..500 {
+        vec.push(i);
+    }
+    println!("vec at {:p}", vec.as_slice());
+
+    let reference_counted = Rc::new(vec![1, 2, 3]);
+    let cloned_reference = reference_counted.clone();
+    println!("current reference count is {}", Rc::strong_count(&cloned_reference));
+    core::mem::drop(reference_counted);
+    println!("current reference count is {}", Rc::strong_count(&cloned_reference));
 
     println!("It did not crash!");
 
