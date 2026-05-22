@@ -30,18 +30,24 @@ test-args = [
 test-success-exit-code = 33
 test-timeout = 300
 
+[features]
+default      = ["use-bootloader"]
+use-bootloader = ["dep:bootloader"]
+use-barnacle   = ["dep:barnacle"]
+
 [dependencies]
-framework = { path = "../framework" }
-platform  = { path = "../platform" }
-bootloader = {version = "0.9.0", features = ["map_physical_memory"]}
-volatile = "0.2.6"
-spin = "0.5.2"
-x86_64 = "0.14.8"
-pic8259 = "0.10.1"
+framework  = { path = "../framework" }
+platform   = { path = "../platform" }
+bootloader = { version = "0.9.0", features = ["map_physical_memory"], optional = true }
+barnacle   = { path = "../barnacle", optional = true }
+volatile   = "0.2.6"
+spin       = "0.5.2"
+x86_64     = "0.14.8"
+pic8259    = "0.10.1"
 pc-keyboard = "0.7.0"
 linked_list_allocator = "0.9.0"
-bitwise = "0.1.0"
+bitwise    = { path = "../bitwise" }
 
 [dependencies.lazy_static]
-version = "1.0"
+version  = "1.0"
 features = ["spin_no_std"]

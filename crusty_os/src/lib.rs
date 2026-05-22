@@ -38,9 +38,12 @@ pub mod serial;
 pub mod vga_buffer;
 pub mod interrupts;
 pub mod gdt;
+#[cfg(feature = "use-bootloader")]
 pub mod memory;
+#[cfg(feature = "use-bootloader")]
 pub mod allocator;
 
+#[cfg(feature = "use-bootloader")]
 extern crate alloc;
 
 // ── Re-exports for integration tests ─────────────────────────────────────────
@@ -105,10 +108,10 @@ fn panic(info: &PanicInfo) -> ! {
 
 // ── Lib-test entry point ──────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, feature = "use-bootloader"))]
 use bootloader::{entry_point, BootInfo};
 
-#[cfg(test)]
+#[cfg(all(test, feature = "use-bootloader"))]
 entry_point!(test_kernel_main);
 
 /// Entry point for `cargo test -p crusty_os` (lib tests only).
@@ -116,7 +119,7 @@ entry_point!(test_kernel_main);
 /// Mirrors `kernel_main` in setup order: platform init → kernel subsystems →
 /// test harness → exit.  Does NOT initialize the heap because lib tests do not
 /// exercise the allocator; heap_allocation.rs integration tests handle that.
-#[cfg(test)]
+#[cfg(all(test, feature = "use-bootloader"))]
 fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
     unsafe { platform::init(); }
     init();

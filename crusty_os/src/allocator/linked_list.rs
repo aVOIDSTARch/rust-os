@@ -2,7 +2,9 @@
 // This is not a production-quality allocator and should not be used in real applications.
 
 
+use core::mem;
 use bitwise::align::align_up;
+
 struct ListNode {
     size: usize,
     next: Option<&'static mut ListNode>,
@@ -48,7 +50,7 @@ impl LinkedListAllocator {
     /// Adds the given memory region to the front of the list.
     unsafe fn add_free_region(&mut self, addr: usize, size: usize) {
         // ensure that the freed region is capable of holding ListNode
-        assert_eq!(align_up(addr, mem::align_of::<ListNode>()), addr);
+        assert_eq!(align_up(addr as u64, mem::align_of::<ListNode>() as u64) as usize, addr);
         assert!(size >= mem::size_of::<ListNode>());
 
         // create a new list node and append it at the start of the list

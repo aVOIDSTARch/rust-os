@@ -1,21 +1,7 @@
-//! crusty_os kernel binary entry point.
+//! crusty_os kernel entry point.
 //!
-//! `kernel_main` is called by the bootloader after it has set up long mode,
-//! a page table, and a stack.  It receives a [`BootInfo`] reference describing
-//! the physical memory map and the offset at which physical memory is mapped
-//! into the virtual address space.
-//!
-//! Startup sequence:
-//! 1. `platform::init()` — UART, framework writer, panic hook
-//! 2. [`crusty_os::init()`] — GDT, IDT, PIC, interrupts enabled
-//! 3. Memory mapper + frame allocator from `BootInfo`
-//! 4. Heap allocator (`allocator::init_heap`)
-//! 5. Idle loop (`hlt_loop`)
-//!
-//! When compiled with `cargo test`, the generated `test_main()` call is
-//! injected before the idle loop.  The test runner is `crusty_os::test_runner`
-//! (set via `#![test_runner(...)]` below), which runs tests via
-//! `framework::runner` and then exits QEMU with the success code.
+//! Build with the default `use-bootloader` feature for the legacy bootloader,
+//! or `--no-default-features --features use-barnacle` for Multiboot2/GRUB via barnacle.
 
 #![no_std]
 #![no_main]
@@ -23,11 +9,19 @@
 #![test_runner(crusty_os::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
-use crusty_os::println;
-use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
+use crusty_os::println;
 
-/// Normal-boot panic: print the panic info over serial and halt QEMU.
+// ── Entry point ──────────────────────────────────────────────────────────────
+
+#[cfg(feature = "use-bootloader")]
+bootloader::entry_point!(kmain);
+
+#[cfg(feature = "use-barnacle")]
+barnacle::entry_point!(kmain);
+
+// ── Panic handlers ───────────────────────────────────────────────────────────
+
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -36,29 +30,23 @@ fn panic(info: &PanicInfo) -> ! {
     platform::exit_failure()
 }
 
-/// Test-mode panic (binary tests via `cargo test`): delegate to the standard
-/// test panic handler so QEMU exits with the failure code.
 #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     crusty_os::test_panic_handler(info)
 }
 
+// ── Bootloader path ──────────────────────────────────────────────────────────
+
+#[cfg(feature = "use-bootloader")]
 extern crate alloc;
-use alloc::{boxed::Box, rc::Rc, vec::Vec, vec};
 
-entry_point!(kernel_main);
-
-/// Main kernel entry point, called by the bootloader.
-///
-/// Performs full initialization and then halts.  In test builds, the injected
-/// `test_main()` runs all collected test cases and exits QEMU before the idle
-/// loop is reached.
-fn kernel_main(boot_info: &'static BootInfo) -> ! {
-    use crusty_os::memory;
-    use x86_64::VirtAddr;
+#[cfg(feature = "use-bootloader")]
+fn kmain(boot_info: &'static bootloader::BootInfo) -> ! {
+    use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};
+    use crusty_os::{allocator, memory};
     use crusty_os::memory::BootInfoFrameAllocator;
-    use crusty_os::allocator;
+    use x86_64::VirtAddr;
 
     unsafe { platform::init(); }
 
@@ -72,7 +60,6 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
-    // Smoke-test heap allocations in the normal boot path.
     let heap_value = Box::new(41);
     println!("heap_value at {:p}", heap_value);
 
@@ -92,6 +79,34 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     #[cfg(test)]
     test_main();
+
+    crusty_os::hlt_loop();
+}
+
+// ── Barnacle / Multiboot2 path ───────────────────────────────────────────────
+
+#[cfg(feature = "use-barnacle")]
+fn kmain(boot_info: &'static barnacle::BootInfo) -> ! {
+    unsafe { platform::init(); }
+
+    println!("Hello from barnacle!");
+
+    crusty_os::init();
+
+    // Physical memory layout via Multiboot2 memory map.
+    // Full memory init (mapper + heap) is a follow-up once crusty_os's memory
+    // module is ported away from bootloader's physical_memory_offset.
+    if let Some(memory_map) = boot_info.memory_map() {
+        for area in memory_map.memory_areas() {
+            println!(
+                "  mem {:016x}–{:016x}",
+                area.start_address(),
+                area.end_address(),
+            );
+        }
+    }
+
+    println!("It did not crash!");
 
     crusty_os::hlt_loop();
 }
