@@ -189,3 +189,58 @@ macro_rules! kprintln {
     () => ($crate::kprint!("\n"));
     ($($arg:tt)*) => ($crate::kprint!("{}\n", format_args!($($arg)*)));
 }
+
+// ── Memory regions ────────────────────────────────────────────────────────────
+
+/// Classification of a physical memory region as reported by the bootloader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum MemoryRegionKind {
+    Usable               = 0,
+    Reserved             = 1,
+    AcpiReclaimable      = 2,
+    Mmio                 = 3,
+    BootloaderReclaimable = 4,
+    KernelAndModules     = 5,
+    Framebuffer          = 6,
+}
+
+/// A contiguous physical address range with a classification.
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct MemoryRegion {
+    pub base:   u64,
+    pub length: u64,
+    pub kind:   MemoryRegionKind,
+}
+
+impl MemoryRegion {
+    #[inline]
+    pub const fn end(&self) -> u64 { self.base + self.length }
+
+    #[inline]
+    pub const fn page_count(&self) -> u64 { self.length / PAGE_SIZE as u64 }
+}
+
+// ── Allocator statistics ──────────────────────────────────────────────────────
+
+/// Snapshot of allocator state surfaced by each allocator layer.
+#[derive(Debug, Clone, Copy, Default)]
+#[repr(C)]
+pub struct AllocStats {
+    pub total_bytes:   u64,
+    pub used_bytes:    u64,
+    pub free_bytes:    u64,
+    pub alloc_count:   u64,
+    pub dealloc_count: u64,
+    pub peak_bytes:    u64,
+}
+
+// ── Page-size constants ───────────────────────────────────────────────────────
+
+pub const PAGE_SIZE:        usize = 4096;
+pub const PAGE_SHIFT:       usize = 12;
+pub const HUGE_PAGE_SIZE:   usize = 2 * 1024 * 1024;
+pub const HUGE_PAGE_SHIFT:  usize = 21;
+/// Maximum buddy order supported (2^10 × 4 KiB = 4 MiB blocks).
+pub const BUDDY_MAX_ORDER:  usize = 11;

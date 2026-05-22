@@ -1,0 +1,19 @@
+[package]
+name    = "profiled"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "profiled"
+path = "src/lib.rs"
+
+[dependencies]
+shared = { path = "../../shared", features = ["std"] }
+
+# tikv-jemalloc-ctl: safe Rust bindings to jemalloc's mallctl introspection API.
+# tikv-jemallocator: the allocator itself (needed to drive the ctl API).
+# We do NOT set this as global allocator here — the app crate uses mimalloc
+# for the global allocator.  Instead we allocate a private jemalloc arena and
+# use it for profiling-instrumented allocations only.
+tikv-jemallocator = { version = "0.5", features = ["profiling", "stats"] }
+tikv-jemalloc-ctl = { version = "0.5", features = ["use_std"] }

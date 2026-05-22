@@ -1,7 +1,11 @@
 //! crusty_os kernel entry point.
 //!
-//! Build with the default `use-bootloader` feature for the legacy bootloader,
-//! or `--no-default-features --features use-barnacle` for Multiboot2/GRUB via barnacle.
+//! Build variants:
+//!   cargo build -p crusty_os                          → legacy bootloader (default)
+//!   cargo build -p crusty_os --no-default-features \
+//!     --features boot-multiboot2                      → Multiboot2 / GRUB via barnacle
+//!   cargo build -p crusty_os --no-default-features \
+//!     --features boot-limine                          → Limine bootloader
 
 #![no_std]
 #![no_main]
@@ -12,13 +16,22 @@
 use core::panic::PanicInfo;
 use crusty_os::println;
 
-// ── Entry point ──────────────────────────────────────────────────────────────
+extern crate alloc;
 
+// ── Boot module (multiboot2 and limine paths) ─────────────────────────────────
+
+#[cfg(any(feature = "boot-multiboot2", feature = "boot-limine"))]
+mod boot;
+
+// ── Entry points ──────────────────────────────────────────────────────────────
+
+// Legacy rust-bootloader path.
 #[cfg(feature = "use-bootloader")]
 bootloader::entry_point!(kmain);
 
-#[cfg(feature = "use-barnacle")]
-barnacle::entry_point!(kmain);
+// Multiboot2: kernel_main is defined in boot/multiboot2.rs (#[no_mangle]).
+// Limine:     _start      is defined in boot/limine.rs     (#[no_mangle]).
+// No entry_point! macro needed for those two paths.
 
 // ── Panic handlers ───────────────────────────────────────────────────────────
 
@@ -36,9 +49,96 @@ fn panic(info: &PanicInfo) -> ! {
     crusty_os::test_panic_handler(info)
 }
 
-extern crate alloc;
+// ── Allocator initialisation (multiboot2 + limine paths) ─────────────────────
 
-// ── Bootloader path ──────────────────────────────────────────────────────────
+/// Populate the buddy allocator from usable memory regions and carve a TLSF pool.
+///
+/// # Safety
+/// Must be called exactly once, before any heap allocation.
+#[cfg(any(feature = "boot-multiboot2", feature = "boot-limine"))]
+pub unsafe fn allocator_init(info: &boot::KernelBootInfo) {
+    use crusty_os::allocator::buddy;
+    use framework::{MemoryRegionKind, PAGE_SIZE};
+
+    {
+        let mut b = buddy::BUDDY.lock();
+        for region in info.regions_of_kind(MemoryRegionKind::Usable) {
+            // Multiboot2: only physical [HEAP_START_PHYS, 2 MB) is HHDM-mapped
+            // at boot. Regions outside this window are silently skipped.
+            #[cfg(feature = "boot-multiboot2")]
+            {
+                use boot::multiboot2::{HHDM_OFFSET as _};
+                const HEAP_START_PHYS: u64 = 0x16_0000;
+                const BOOT_MAPPED_PHYS: u64 = 2 * 1024 * 1024;
+
+                let clamped_base = region.base.max(HEAP_START_PHYS);
+                let clamped_end  = (region.base + region.length).min(BOOT_MAPPED_PHYS);
+                if clamped_end <= clamped_base { continue; }
+
+                let virt_base   = info.hhdm_offset + clamped_base as usize;
+                let page_count  = ((clamped_end - clamped_base) as usize) / PAGE_SIZE;
+                if page_count > 0 {
+                    b.add_region(virt_base, page_count);
+                }
+            }
+
+            // Limine: all usable RAM is HHDM-mapped before _start is called.
+            #[cfg(feature = "boot-limine")]
+            {
+                let page_base  = (region.base as usize + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+                let page_end   = (region.base + region.length) as usize & !(PAGE_SIZE - 1);
+                if page_end <= page_base { continue; }
+                let virt_base  = info.hhdm_offset + page_base;
+                let page_count = (page_end - page_base) / PAGE_SIZE;
+                if page_count > 0 {
+                    b.add_region(virt_base, page_count);
+                }
+            }
+        }
+    }
+
+    // Carve a TLSF pool from buddy pages and initialise the global allocator.
+    // Multiboot2: order 6 = 64 pages = 256 KiB (fits in the ~640 KiB window).
+    // Limine:     order 8 = 256 pages = 1 MiB  (ample RAM available).
+    #[cfg(feature = "boot-multiboot2")]
+    crusty_os::allocator::TLSF.init(6);
+
+    #[cfg(feature = "boot-limine")]
+    crusty_os::allocator::TLSF.init(8);
+}
+
+// ── Post-heap kernel main (multiboot2 + limine paths) ────────────────────────
+
+#[cfg(any(feature = "boot-multiboot2", feature = "boot-limine"))]
+pub fn kernel_main_post_heap() -> ! {
+    use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};
+
+    unsafe { platform::init(); }
+
+    println!("Hello from kernel_main_post_heap!");
+
+    crusty_os::init();
+
+    // Heap smoke tests.
+    let heap_value = Box::new(41);
+    println!("heap_value at {:p}", heap_value);
+
+    let mut vec = Vec::new();
+    for i in 0..500 { vec.push(i); }
+    println!("vec at {:p}", vec.as_slice());
+
+    let reference_counted = Rc::new(vec![1, 2, 3]);
+    let cloned_reference  = reference_counted.clone();
+    println!("current reference count is {}", Rc::strong_count(&cloned_reference));
+    core::mem::drop(reference_counted);
+    println!("current reference count is {}", Rc::strong_count(&cloned_reference));
+
+    println!("It did not crash!");
+
+    crusty_os::hlt_loop()
+}
+
+// ── Legacy bootloader path ────────────────────────────────────────────────────
 
 #[cfg(feature = "use-bootloader")]
 fn kmain(boot_info: &'static bootloader::BootInfo) -> ! {
@@ -63,13 +163,11 @@ fn kmain(boot_info: &'static bootloader::BootInfo) -> ! {
     println!("heap_value at {:p}", heap_value);
 
     let mut vec = Vec::new();
-    for i in 0..500 {
-        vec.push(i);
-    }
+    for i in 0..500 { vec.push(i); }
     println!("vec at {:p}", vec.as_slice());
 
     let reference_counted = Rc::new(vec![1, 2, 3]);
-    let cloned_reference = reference_counted.clone();
+    let cloned_reference  = reference_counted.clone();
     println!("current reference count is {}", Rc::strong_count(&cloned_reference));
     core::mem::drop(reference_counted);
     println!("current reference count is {}", Rc::strong_count(&cloned_reference));
@@ -79,53 +177,5 @@ fn kmain(boot_info: &'static bootloader::BootInfo) -> ! {
     #[cfg(test)]
     test_main();
 
-    crusty_os::hlt_loop();
-}
-
-// ── Barnacle / Multiboot2 path ───────────────────────────────────────────────
-
-#[cfg(feature = "use-barnacle")]
-fn kmain(boot_info: &'static barnacle::BootInfo) -> ! {
-    use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};
-    use crusty_os::allocator;
-
-    unsafe { platform::init(); }
-
-    println!("Hello from barnacle!");
-
-    crusty_os::init();
-
-    // Print the Multiboot2 physical memory map.
-    if let Some(memory_map) = boot_info.memory_map() {
-        for area in memory_map.memory_areas() {
-            println!(
-                "  mem {:016x}–{:016x}",
-                area.start_address(),
-                area.end_address(),
-            );
-        }
-    }
-
-    // Heap lives in the pre-mapped 2 MB window (boot.asm huge page).
-    // No additional page-table manipulation needed.
-    allocator::init_heap_barnacle();
-
-    let heap_value = Box::new(41);
-    println!("heap_value at {:p}", heap_value);
-
-    let mut vec = Vec::new();
-    for i in 0..500 {
-        vec.push(i);
-    }
-    println!("vec at {:p}", vec.as_slice());
-
-    let reference_counted = Rc::new(vec![1, 2, 3]);
-    let cloned_reference = reference_counted.clone();
-    println!("current reference count is {}", Rc::strong_count(&cloned_reference));
-    core::mem::drop(reference_counted);
-    println!("current reference count is {}", Rc::strong_count(&cloned_reference));
-
-    println!("It did not crash!");
-
-    crusty_os::hlt_loop();
+    crusty_os::hlt_loop()
 }

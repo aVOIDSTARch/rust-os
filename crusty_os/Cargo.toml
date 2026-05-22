@@ -31,17 +31,20 @@ test-success-exit-code = 33
 test-timeout = 300
 
 [features]
-default      = ["use-bootloader"]
+# Exactly one boot feature must be active per binary build.
+default        = ["use-bootloader"]
 use-bootloader = ["dep:bootloader"]
-use-barnacle   = ["dep:barnacle"]
+boot-multiboot2 = ["dep:barnacle"]
+boot-limine     = ["dep:limine"]
 
 [dependencies]
 framework  = { path = "../framework" }
 platform   = { path = "../platform" }
 bootloader = { version = "0.9.0", features = ["map_physical_memory"], optional = true }
 barnacle   = { path = "../barnacle", optional = true }
+limine     = { version = "0.2", default-features = false, optional = true }
 volatile   = "0.2.6"
-spin       = "0.5.2"
+spin       = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"] }
 x86_64     = "0.14.8"
 pic8259    = "0.10.1"
 pc-keyboard = "0.7.0"

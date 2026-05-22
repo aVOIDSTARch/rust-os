@@ -1,0 +1,20 @@
+[package]
+name    = "app"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "app"
+path = "src/main.rs"
+
+[dependencies]
+shared   = { path = "../../shared", features = ["std"] }
+profiled = { path = "../profiled" }
+
+# mimalloc: zero-config drop-in replacement for the system allocator.
+# secure = true enables encoded free lists and guard pages.
+mimalloc = { version = "0.1", default-features = false, features = ["secure"] }
+
+[profile.release]
+opt-level = 3
+lto       = "thin"

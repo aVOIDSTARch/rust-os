@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "shared",
+    "kernel",
+    "userspace/app",
+    "userspace/profiled",
+]
+resolver = "2"

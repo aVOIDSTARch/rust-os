@@ -1,0 +1,12 @@
+[package]
+name    = "shared"
+version = "0.1.0"
+edition = "2021"
+
+# No std — must compile for both bare-metal kernel and hosted userspace.
+# Userspace crates enable the "std" feature; kernel does not.
+[features]
+default = []
+std     = []
+
+[dependencies]

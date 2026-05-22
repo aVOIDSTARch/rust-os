@@ -1,0 +1,39 @@
+[package]
+name    = "kernel"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "kernel"
+path = "src/main.rs"
+
+[features]
+# Exactly one boot feature must be enabled per build.
+# Default to Limine for new projects; override on the command line or in
+# a workspace-level .cargo/config.toml:
+#   [build]
+#   rustflags = ["--cfg", "feature=\"boot-multiboot2\""]
+default = ["boot-limine"]
+
+boot-limine     = ["dep:limine"]
+boot-multiboot2 = ["dep:multiboot2"]
+boot-rboot      = ["dep:bootloader"]
+
+[dependencies]
+shared = { path = "../shared" }
+spin   = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"] }
+
+# Each bootloader dep is optional — only the selected feature pulls it in.
+limine      = { version = "0.2",  optional = true }
+multiboot2  = { version = "0.15", optional = true }
+bootloader  = { version = "0.11", optional = true, features = ["map_physical_memory"] }
+
+[profile.dev]
+panic     = "abort"
+opt-level = 1
+
+[profile.release]
+panic         = "abort"
+opt-level     = 3
+lto           = "thin"
+codegen-units = 1
