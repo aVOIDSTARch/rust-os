@@ -108,14 +108,14 @@ fn panic(info: &PanicInfo) -> ! {
 #[cfg(test)]
 use bootloader::{entry_point, BootInfo};
 
+#[cfg(test)]
+entry_point!(test_kernel_main);
+
 /// Entry point for `cargo test -p crusty_os` (lib tests only).
 ///
 /// Mirrors `kernel_main` in setup order: platform init → kernel subsystems →
 /// test harness → exit.  Does NOT initialize the heap because lib tests do not
 /// exercise the allocator; heap_allocation.rs integration tests handle that.
-#[cfg(test)]
-entry_point!(test_kernel_main);
-
 #[cfg(test)]
 fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
     unsafe { platform::init(); }

@@ -23,7 +23,6 @@
 //!   `lib.rs` so that it can control the test-vs-normal-boot distinction.
 
 #![no_std]
-#![cfg_attr(test, feature(custom_test_frameworks))]
 
 use core::fmt;
 use core::cell::UnsafeCell;

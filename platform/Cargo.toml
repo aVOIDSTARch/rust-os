@@ -3,6 +3,10 @@ name = "platform"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+test = false
+doctest = false
+
 [dependencies]
 framework = { path = "../framework" }
 uart_16550 = "0.6"
