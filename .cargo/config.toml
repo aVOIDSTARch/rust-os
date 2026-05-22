@@ -2,6 +2,9 @@
 # All members default to the bare-metal x86_64 target used by crusty_os.
 # Per-crate configs (crusty_os/.cargo/config.toml) shadow these for their crate.
 
+[alias]
+xtask = "run --package xtask --target aarch64-apple-darwin --"
+
 [build]
 target = "crusty_os/x86_64-crusty_os.json"
 

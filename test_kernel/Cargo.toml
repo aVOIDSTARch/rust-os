@@ -1,0 +1,11 @@
+[package]
+name    = "test_kernel"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "test_kernel"
+path = "src/main.rs"
+
+[dependencies]
+barnacle = { path = "../barnacle" }

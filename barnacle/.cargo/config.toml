@@ -1,0 +1,5 @@
+# barnacle is a library — it never produces a test or runnable binary itself.
+# Override the workspace runner so that if cargo somehow tries to run a
+# barnacle artifact it fails loudly rather than invoking bootimage runner.
+[target.'cfg(target_os = "none")']
+runner = ""

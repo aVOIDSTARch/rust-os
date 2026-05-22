@@ -1,11 +1,17 @@
 [package]
-name = "barnacle"
+name    = "barnacle"
 version = "0.1.0"
 edition = "2024"
-
-[dependencies]
-
+links   = "barnacle_boot"
 
 [lib]
-test = false
+name    = "barnacle"
+path    = "src/lib.rs"
+test    = false
 doctest = false
+
+[dependencies]
+multiboot2 = { version = "0.24", default-features = false }
+
+[build-dependencies]
+# none — build.rs uses std only

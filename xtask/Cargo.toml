@@ -1,0 +1,7 @@
+[package]
+name    = "xtask"
+version = "0.1.0"
+edition = "2024"
+
+# xtask runs on the host (macOS/Linux) — no special dependencies needed.
+# It shells out to cargo, nasm, grub-mkrescue / docker, and qemu.

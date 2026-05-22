@@ -1,0 +1,3 @@
+# Build xtask for the host, not the baremetal target set workspace-wide.
+[build]
+target = "aarch64-apple-darwin"

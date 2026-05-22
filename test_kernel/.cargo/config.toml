@@ -1,0 +1,4 @@
+# test_kernel is booted via GRUB+QEMU through `cargo xtask run`.
+# Override the workspace bootimage runner — test_kernel does not use bootimage.
+[target.'cfg(target_os = "none")']
+runner = ""

@@ -1,5 +1,9 @@
 [workspace]
-members = ["framework", "platform", "crusty_os", "bitwise", "barnacle"]
+members = ["framework", "platform", "crusty_os", "bitwise", "barnacle", "xtask", "test_kernel"]
+# xtask and test_kernel excluded from the default build set:
+# - xtask runs on the host and should not be cross-compiled to the bare-metal target
+# - test_kernel is built explicitly via `cargo xtask run`
+default-members = ["framework", "platform", "crusty_os", "bitwise", "barnacle"]
 resolver = "3"
 
 [profile.dev]
