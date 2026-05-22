@@ -1,6 +1,11 @@
 [package]
-name = "crusty_bootloader"
+name = "barnacle"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+
+
+[lib]
+test = false
+doctest = false

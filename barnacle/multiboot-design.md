@@ -532,7 +532,7 @@ fn main() {
 set timeout=0
 set default=0
 
-menuentry "MyOS" {
+menuentry "CRUSTYOS" {
     multiboot2 /boot/kernel.elf
     boot
 }
@@ -540,7 +540,7 @@ menuentry "MyOS" {
 
 ```makefile
 # Makefile
-KERNEL := target/x86_64-unknown-none/release/myos
+KERNEL := target/x86_64-unknown-none/release/crusty_os
 
 .PHONY: iso run
 
@@ -551,7 +551,7 @@ iso: $(KERNEL)
 	mkdir -p iso/boot/grub
 	cp $(KERNEL) iso/boot/kernel.elf
 	cp grub.cfg iso/boot/grub/grub.cfg
-	grub-mkrescue -o myos.iso iso
+	grub-mkrescue -o crustyos.iso iso
 
 run: iso
 	qemu-system-x86_64 \
