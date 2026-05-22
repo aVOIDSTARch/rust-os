@@ -1,7 +1,7 @@
 #![no_std]
 #![cfg_attr(test, no_main)]
 #![feature(custom_test_frameworks)]
-#![test_runner(crate::test_runner)]
+#![test_runner(framework::runner)]
 #![reexport_test_harness_main = "test_main"]
 #![feature(abi_x86_interrupt)]
 
@@ -16,36 +16,49 @@ pub mod allocator;
 
 extern crate alloc;
 
-// Trait and functions for testing
-pub trait Testable {
-    fn run(&self) -> ();
+// ── Re-exports for backwards compat with integration tests ────────────────────
+
+pub use framework::Testable;
+
+/// Wraps framework::runner and exits QEMU on success.
+/// Used by integration tests and the binary test runner.
+pub fn test_runner(tests: &[&dyn framework::Testable]) {
+    framework::runner(tests);
+    platform::exit_success();
 }
 
-impl<T> Testable for T
-where
-    T: Fn(),
-{
-    fn run(&self) {
-        serial_print!("{}...\t", core::any::type_name::<T>());
-        self();
-        serial_println!("[ok]");
-    }
+pub use platform::QemuExitCode;
+
+/// Backwards-compat wrapper: integration tests expect () return type.
+pub fn exit_qemu(code: QemuExitCode) {
+    platform::exit_qemu(code);
 }
 
-/// This function is called from `main` when `cfg(test)` is set.
-pub fn test_runner(tests: &[&dyn Testable]) {
-    serial_println!("Running {} tests", tests.len());
-    for test in tests {
-        test.run();
-    }
-    exit_qemu(QemuExitCode::Success);
+pub fn test_panic_handler(info: &PanicInfo) -> ! {
+    use framework::kprintln;
+    kprintln!("[failed]\n");
+    kprintln!("Error: {}\n", info);
+    platform::exit_failure()
 }
 
+// ── Panic handlers (crusty_os owns the #[panic_handler] symbol) ───────────────
 
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    use framework::kprintln;
+    kprintln!("{}", info);
+    platform::exit_failure()
+}
 
-// Entry point for `cargo test`
+#[cfg(test)]
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    test_panic_handler(info)
+}
 
-// assign entry point for `cargo test` builds to `_start` function in this file
+// ── Test entry point ──────────────────────────────────────────────────────────
+
 #[cfg(test)]
 use bootloader::{entry_point, BootInfo};
 
@@ -54,52 +67,14 @@ entry_point!(test_kernel_main);
 
 #[cfg(test)]
 fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
+    unsafe { platform::init(); }
     init();
-    test_main();
-    hlt_loop();
+    test_main();           // calls framework::runner (lib-test runner attr above)
+    platform::exit_success()
 }
 
-/// This function is called on panic in test mode.
-pub fn test_panic_handler(info: &PanicInfo) -> ! {
-    serial_println!("[failed]\n");
-    serial_println!("Error: {}\n", info);
-    exit_qemu(QemuExitCode::Failed);
-    hlt_loop();
-}
+// ── Kernel init and halt ──────────────────────────────────────────────────────
 
-/// This function is called on panic for `#[cfg(test)]` builds.
-#[cfg(test)]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    test_panic_handler(info)
-}
-
-/// This function is called on panic for `#[cfg(not(test))]` builds.
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    println!("{}", info);
-    hlt_loop();
-}
-
-/// Exit QEMU with the given exit code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u32)]
-pub enum QemuExitCode {
-    Success = 0x10,
-    Failed = 0x11,
-}
-
-pub fn exit_qemu(exit_code: QemuExitCode) {
-    use x86_64::instructions::port::Port;
-
-    unsafe {
-        let mut port = Port::new(0xf4);
-        port.write(exit_code as u32);
-    }
-}
-
-/// Initializer.
 pub fn init() {
     gdt::init();
     interrupts::init_idt();
@@ -107,7 +82,6 @@ pub fn init() {
     x86_64::instructions::interrupts::enable();
 }
 
-// CPU halt loop.
 pub fn hlt_loop() -> ! {
     loop {
         x86_64::instructions::hlt();

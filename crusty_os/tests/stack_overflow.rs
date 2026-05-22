@@ -29,6 +29,7 @@ pub fn init_test_idt() {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
+    unsafe { platform::init(); }
     serial_print!("stack_overflow::stack_overflow...\t");
 
     crusty_os::gdt::init();

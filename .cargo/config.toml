@@ -1,0 +1,10 @@
+# Workspace-level Cargo config.
+#
+# Per-crate configs (crusty_os/.cargo/config.toml, bitwise/.cargo/config.toml)
+# shadow these settings for their respective crates.
+
+# QEMU runner for x86_64-unknown-none targets — used by `cargo test -p bitwise`.
+# The iobase=0xf4 exit port must match QemuExitCode values in platform/src/lib.rs.
+[target.x86_64-unknown-none]
+runner = "qemu-system-x86_64 -device isa-debug-exit,iobase=0xf4,iosize=0x04 -serial stdio -display none"
+rustflags = ["-C", "target-feature=+sse,+sse2"]

@@ -7,6 +7,7 @@ use crusty_os::{exit_qemu, serial_print, serial_println, QemuExitCode};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
+    unsafe { platform::init(); }
     should_fail();
     serial_println!("[test did not panic]");
     exit_qemu(QemuExitCode::Failed);

@@ -16,6 +16,7 @@ fn main(boot_info: &'static BootInfo) -> ! {
     use crusty_os::memory::{self, BootInfoFrameAllocator};
     use x86_64::VirtAddr;
 
+    unsafe { platform::init(); }
     crusty_os::init();
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };

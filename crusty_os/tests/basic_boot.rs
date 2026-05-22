@@ -10,6 +10,7 @@ use crusty_os::{Testable, println};
 
 #[unsafe(no_mangle)] // don't mangle the name of this function
 pub extern "C" fn _start() -> ! {
+    unsafe { platform::init(); }
     test_main();
 
     loop {}

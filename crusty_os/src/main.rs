@@ -22,6 +22,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use crusty_os::memory::BootInfoFrameAllocator;
     use crusty_os::allocator;
 
+    unsafe { platform::init(); }
+
     println!("Hello World{}", "!");
 
     crusty_os::init();
