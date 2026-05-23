@@ -3,8 +3,14 @@
 # Per-crate configs (crusty_os/.cargo/config.toml) shadow these for their crate.
 
 [alias]
-xtask = ["run", "--manifest-path", "xtask/Cargo.toml",
-         "--config", "build.target=\"aarch64-apple-darwin\"", "--"]
+xtask = [
+        "run",
+        "--manifest-path",
+        "xtask/Cargo.toml",
+        "--config",
+        "build.target=\"aarch64-apple-darwin\"",
+        "--"
+        ]
 
 [build]
 target = "crusty_os/x86_64-crusty_os.json"
