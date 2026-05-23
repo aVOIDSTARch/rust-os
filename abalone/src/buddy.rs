@@ -98,8 +98,7 @@ impl BuddyAllocator {
         let mut offset_pages = (virt_base - self.base) / PAGE_SIZE;
 
         while remaining > 0 {
-            let order       = (remaining.next_power_of_two().trailing_zeros() as usize)
-                                  .min(BUDDY_MAX_ORDER - 1);
+            let order       = (remaining.ilog2() as usize).min(BUDDY_MAX_ORDER - 1);
             let block_pages = 1usize << order;
 
             if block_pages > remaining || (offset_pages & (block_pages - 1)) != 0 {
