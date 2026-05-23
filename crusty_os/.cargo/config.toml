@@ -11,5 +11,3 @@ target = "x86_64-crusty_os.json"
 # Run bare-metal test binaries by creating a GRUB ISO and booting in QEMU.
 # test-runner.sh is in the workspace root; cargo inherits the invoking
 # directory as CWD, so `cargo test` from the workspace root finds it.
-[target.'cfg(target_os = "none")']
-runner = "bash test-runner.sh"

@@ -20,3 +20,6 @@ json-target-spec = true
 build-std = ["core", "compiler_builtins", "alloc"]
 build-std-features = ["compiler-builtins-mem"]
 
+[target.x86_64-crusty_os]
+runner = "/bin/bash test-runner.sh"
+
