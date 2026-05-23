@@ -45,11 +45,12 @@ dependencies = [
  "bootloader",
  "framework",
  "lazy_static",
+ "limine",
  "linked_list_allocator",
  "pc-keyboard",
  "pic8259",
  "platform",
- "spin 0.5.2",
+ "spin",
  "volatile 0.2.7",
  "x86_64",
 ]
@@ -64,8 +65,14 @@ version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 dependencies = [
- "spin 0.9.8",
+ "spin",
 ]
+
+[[package]]
+name = "limine"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90b240f611eba0b43bf3e97478d87f12322c6c0f540bdad885c3e8c4a0d57333"
 
 [[package]]
 name = "linked_list_allocator"
@@ -188,12 +195,6 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
-
-[[package]]
-name = "spin"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "spin"

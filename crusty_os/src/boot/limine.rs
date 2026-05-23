@@ -1,4 +1,4 @@
-// Limine boot protocol adapter.
+// Limine boot protocol adapter (limine crate 0.6.x).
 //
 // Limine transfers control to `_start` already in 64-bit long mode with:
 //   * A valid stack (≥ 16 KiB, 16-byte aligned)
@@ -9,7 +9,8 @@
 // No assembly trampoline is needed.
 
 use limine::{
-    request::{HhdmRequest, KernelAddressRequest, MemoryMapRequest},
+    request::{ExecutableAddressRequest, HhdmRequest, MemmapRequest},
+    memmap,
     BaseRevision,
 };
 use framework::{MemoryRegion, MemoryRegionKind};
@@ -21,13 +22,13 @@ use super::KernelBootInfo;
 static BASE_REVISION: BaseRevision = BaseRevision::new();
 
 #[used]
-static MEMMAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
+static MEMMAP_REQUEST: MemmapRequest = MemmapRequest::new();
 
 #[used]
 static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
 #[used]
-static KERNEL_ADDR_REQUEST: KernelAddressRequest = KernelAddressRequest::new();
+static EXEC_ADDR_REQUEST: ExecutableAddressRequest = ExecutableAddressRequest::new();
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -35,22 +36,22 @@ static KERNEL_ADDR_REQUEST: KernelAddressRequest = KernelAddressRequest::new();
 ///
 /// # Safety
 /// Called exactly once by the bootloader on the bootstrap processor.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _start() -> ! {
     assert!(BASE_REVISION.is_supported(), "Limine: unsupported base revision");
 
     let hhdm_offset = HHDM_REQUEST
-        .get_response()
+        .response()
         .expect("Limine: no HHDM response")
-        .offset() as usize;
+        .offset as usize;
 
-    let kernel_phys_base = KERNEL_ADDR_REQUEST
-        .get_response()
-        .expect("Limine: no kernel address response")
-        .physical_base();
+    let kernel_phys_base = EXEC_ADDR_REQUEST
+        .response()
+        .expect("Limine: no executable address response")
+        .physical_base;
 
     let memmap_response = MEMMAP_REQUEST
-        .get_response()
+        .response()
         .expect("Limine: no memory map response");
 
     static mut REGIONS: [MemoryRegion; 256] = [MemoryRegion {
@@ -58,21 +59,16 @@ pub unsafe extern "C" fn _start() -> ! {
     }; 256];
 
     let entries = memmap_response.entries();
-    let count   = entries.len().min(unsafe { REGIONS.len() });
+    let count   = entries.len().min(256);
 
     for (i, entry) in entries.iter().enumerate().take(count) {
-        let kind = match entry.entry_type {
-            limine::memory_map::EntryType::USABLE =>
-                MemoryRegionKind::Usable,
-            limine::memory_map::EntryType::ACPI_RECLAIMABLE =>
-                MemoryRegionKind::AcpiReclaimable,
-            limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE =>
-                MemoryRegionKind::BootloaderReclaimable,
-            limine::memory_map::EntryType::KERNEL_AND_MODULES =>
-                MemoryRegionKind::KernelAndModules,
-            limine::memory_map::EntryType::FRAMEBUFFER =>
-                MemoryRegionKind::Framebuffer,
-            _ => MemoryRegionKind::Reserved,
+        let kind = match entry.type_ {
+            memmap::MEMMAP_USABLE                  => MemoryRegionKind::Usable,
+            memmap::MEMMAP_ACPI_RECLAIMABLE        => MemoryRegionKind::AcpiReclaimable,
+            memmap::MEMMAP_BOOTLOADER_RECLAIMABLE  => MemoryRegionKind::BootloaderReclaimable,
+            memmap::MEMMAP_EXECUTABLE_AND_MODULES  => MemoryRegionKind::KernelAndModules,
+            memmap::MEMMAP_FRAMEBUFFER             => MemoryRegionKind::Framebuffer,
+            _                                      => MemoryRegionKind::Reserved,
         };
         unsafe {
             REGIONS[i] = MemoryRegion { base: entry.base, length: entry.length, kind };
@@ -80,7 +76,7 @@ pub unsafe extern "C" fn _start() -> ! {
     }
 
     let regions: &'static [MemoryRegion] =
-        unsafe { core::slice::from_raw_parts(REGIONS.as_ptr(), count) };
+        unsafe { core::slice::from_raw_parts(core::ptr::addr_of!(REGIONS) as *const MemoryRegion, count) };
 
     let boot_info = KernelBootInfo { memory_regions: regions, hhdm_offset, kernel_phys_base };
 

@@ -119,8 +119,8 @@ pub enum InterruptVector {
     Rtc             = PIC_IRQ_RTC,
     Mouse           = PIC_IRQ_MOUSE,
     AtaPrimary      = PIC_IRQ_ATA_PRIMARY,
+    // IRQ15: secondary ATA channel or spurious slave — distinguish via ISR.
     AtaSecondary    = PIC_IRQ_ATA_SECONDARY,
-    SpuriousSlave   = PIC_IRQ_ATA_SECONDARY, // IRQ15 — same vector
 }
 
 impl InterruptVector {
@@ -137,7 +137,9 @@ impl InterruptVector {
     /// True if this vector corresponds to a spurious IRQ that must NOT
     /// receive an EOI from the slave PIC.
     #[inline]
-    pub fn is_spurious(self) -> bool {
-        matches!(self, Self::SpuriousMaster | Self::SpuriousSlave)
+    /// True if this is the spurious master (IRQ7).
+    /// For IRQ15 (`AtaSecondary`), check the slave ISR to determine spuriousness.
+    pub fn is_spurious_master(self) -> bool {
+        matches!(self, Self::SpuriousMaster)
     }
 }

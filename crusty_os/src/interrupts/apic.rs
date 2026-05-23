@@ -39,16 +39,19 @@ pub fn apic_supported() -> bool {
     // CPUID leaf 1, EDX bit 9 = APIC on-chip.
     // The `raw_cpuid` crate or inline asm can be used; we use a minimal
     // inline asm approach to keep the dependency list flat.
+    // rbx/ebx is reserved by LLVM; use xchg to save/restore it around cpuid.
     let edx: u32;
     unsafe {
         core::arch::asm!(
+            "xchg {tmp}, rbx",
             "mov eax, 1",
             "cpuid",
+            "xchg {tmp}, rbx",
             out("edx") edx,
-            // Clobber eax, ebx, ecx — CPUID modifies all four.
+            tmp = lateout(reg) _,
             lateout("eax") _,
-            lateout("ebx") _,
             lateout("ecx") _,
+            options(nostack, preserves_flags),
         );
     }
     edx & (1 << 9) != 0

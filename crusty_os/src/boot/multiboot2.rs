@@ -36,7 +36,7 @@ static mut REGIONS: [MemoryRegion; MAX_REGIONS] = [MemoryRegion {
 ///
 /// # Safety
 /// Called exactly once on the bootstrap processor with GRUB's valid MB2 ptr.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kernel_main(mbi_phys: u64) -> ! {
     let boot_info = barnacle::init(mbi_phys);
 
@@ -53,9 +53,9 @@ pub unsafe extern "C" fn kernel_main(mbi_phys: u64) -> ! {
             if page_end <= page_base { continue; }
 
             let kind = match area.typ() {
-                t if t == MemoryAreaType::AVAILABLE       => MemoryRegionKind::Usable,
-                t if t == MemoryAreaType::ACPI_AVAILABLE  => MemoryRegionKind::AcpiReclaimable,
-                _                                         => MemoryRegionKind::Reserved,
+                t if t == MemoryAreaType::Available      => MemoryRegionKind::Usable,
+                t if t == MemoryAreaType::AcpiAvailable  => MemoryRegionKind::AcpiReclaimable,
+                _                                        => MemoryRegionKind::Reserved,
             };
 
             REGIONS[count] = MemoryRegion {
@@ -71,7 +71,7 @@ pub unsafe extern "C" fn kernel_main(mbi_phys: u64) -> ! {
     let kernel_phys_base: u64 = 0x10_0000; // 1 MiB
 
     let regions: &'static [MemoryRegion] =
-        core::slice::from_raw_parts(REGIONS.as_ptr(), count);
+        core::slice::from_raw_parts(core::ptr::addr_of!(REGIONS) as *const MemoryRegion, count);
 
     let kbi = KernelBootInfo {
         memory_regions:   regions,
@@ -96,6 +96,8 @@ const fn align_down(addr: u64, align: u64) -> u64 {
 }
 
 const _HHDM_CHECK: () = {
-    let expected: u64 = 0xFFFF_8000_0000_0000u64 + (511u64 << 39) + (510u64 << 30);
+    // PML4[511] base: sign_extend(0xFF80_0000_0000) = 0xFFFF_FF80_0000_0000
+    // PDPT[510] adds: 510 * 2^30 = 0x7F_8000_0000
+    let expected: u64 = 0xFFFF_FF80_0000_0000u64 + 510u64 * (1u64 << 30);
     assert!(expected == HHDM_OFFSET as u64, "HHDM_OFFSET does not match boot.asm page tables");
 };

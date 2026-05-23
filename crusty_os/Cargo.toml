@@ -42,7 +42,7 @@ framework  = { path = "../framework" }
 platform   = { path = "../platform" }
 bootloader = { version = "0.9.0", features = ["map_physical_memory"], optional = true }
 barnacle   = { path = "../barnacle", optional = true }
-limine     = { version = "0.2", default-features = false, optional = true }
+limine     = { version = "0.6", default-features = false, optional = true }
 volatile   = "0.2.6"
 spin       = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"] }
 x86_64     = "0.14.8"

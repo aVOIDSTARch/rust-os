@@ -6,7 +6,8 @@ use x86_64::structures::gdt::{GlobalDescriptorTable, Descriptor, SegmentSelector
 use lazy_static::lazy_static;
 
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
-
+pub const NMI_IST_INDEX:          u16 = 1;
+pub const MACHINE_CHECK_IST_INDEX: u16 = 2;
 
 // Struct to hold the segment selectors for the code and TSS segments.
 struct Selectors {
@@ -14,18 +15,24 @@ struct Selectors {
     tss_selector: SegmentSelector,
 }
 
+macro_rules! ist_stack {
+    ($tss:expr, $index:expr) => {{
+        const STACK_SIZE: usize = 4096 * 5;
+        static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+        let start = VirtAddr::from_ptr(&raw const STACK);
+        $tss.interrupt_stack_table[$index as usize] = start + STACK_SIZE;
+    }};
+}
+
 // Initializes the TSS.
 lazy_static! {
     static ref TSS: TaskStateSegment = {
         let mut tss = TaskStateSegment::new();
-        tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = {
-            const STACK_SIZE: usize = 4096 * 5;
-            static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
-
-            let stack_start = VirtAddr::from_ptr(&raw const STACK);
-            let stack_end = stack_start + STACK_SIZE;
-            stack_end
-        };
+        unsafe {
+            ist_stack!(tss, DOUBLE_FAULT_IST_INDEX);
+            ist_stack!(tss, NMI_IST_INDEX);
+            ist_stack!(tss, MACHINE_CHECK_IST_INDEX);
+        }
         tss
     };
 }

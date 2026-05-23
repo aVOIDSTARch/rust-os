@@ -5,4 +5,4 @@ members = [
     "userspace/app",
     "userspace/profiled",
 ]
-resolver = "2"
+resolver = "3"

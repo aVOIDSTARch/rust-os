@@ -134,8 +134,7 @@ fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
 /// hardware exception handlers (e.g. page fault, double fault).
 pub fn init() {
     gdt::init();
-    interrupts::init_idt();
-    unsafe { interrupts::PICS.lock().initialize() };
+    interrupts::init();
     x86_64::instructions::interrupts::enable();
 }
 
