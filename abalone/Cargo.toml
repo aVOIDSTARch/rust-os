@@ -1,0 +1,16 @@
+[package]
+name    = "abalone"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name    = "abalone"
+path    = "src/lib.rs"
+test    = false
+doctest = false
+
+[dependencies]
+framework = { path = "../framework" }
+bitwise   = { path = "../bitwise" }
+spin      = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"] }
+linked_list_allocator = "0.9.0"

@@ -10,12 +10,12 @@
 #![no_std]
 #![no_main]
 
-use barnacle::BootInfo;
+use barnacle::KernelBootInfo;
 use core::panic::PanicInfo;
 
 barnacle::entry_point!(kmain);
 
-fn kmain(_boot_info: &'static BootInfo) -> ! {
+fn kmain(_kbi: &'static KernelBootInfo) -> ! {
     // Physical 0xB8000 (VGA text buffer) is accessible at:
     //   - 0x000000000000B8000  (identity map, valid until kernel sets up own tables)
     //   - 0xFFFFFFFF800B8000   (higher-half: KERNEL_OFFSET + 0xB8000)

@@ -11,7 +11,7 @@ use core::{
 };
 use spin::Mutex;
 use framework::PAGE_SIZE;
-use super::buddy;
+use crate::buddy;
 
 // ── TLSF parameters ───────────────────────────────────────────────────────────
 

@@ -236,6 +236,39 @@ pub struct AllocStats {
     pub peak_bytes:    u64,
 }
 
+// ── Boot information ──────────────────────────────────────────────────────────
+
+/// Protocol-neutral description of the machine state at kernel entry.
+///
+/// Produced by each boot-protocol adapter (barnacle for Multiboot2, the Limine
+/// adapter in crusty_os) and consumed by the kernel's allocator init and any
+/// other code that needs to inspect the physical memory map.
+pub struct KernelBootInfo {
+    /// Physical memory map reported by the bootloader, in a static slice.
+    pub memory_regions:   &'static [MemoryRegion],
+    /// Virtual offset that converts a physical address to its Higher-Half
+    /// Direct Map (HHDM) virtual address: `virt = hhdm_offset + phys`.
+    pub hhdm_offset:      usize,
+    /// Physical base address of the loaded kernel image.
+    pub kernel_phys_base: u64,
+}
+
+impl KernelBootInfo {
+    /// Iterate over memory regions of a specific [`MemoryRegionKind`].
+    pub fn regions_of_kind(
+        &self,
+        kind: MemoryRegionKind,
+    ) -> impl Iterator<Item = &MemoryRegion> {
+        self.memory_regions.iter().filter(move |r| r.kind == kind)
+    }
+
+    /// Convert a physical address to its HHDM virtual address.
+    #[inline]
+    pub fn phys_to_virt(&self, phys: u64) -> usize {
+        self.hhdm_offset + phys as usize
+    }
+}
+
 // ── Page-size constants ───────────────────────────────────────────────────────
 
 pub const PAGE_SIZE:        usize = 4096;

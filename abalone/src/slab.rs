@@ -13,7 +13,7 @@ use core::{
 };
 use spin::Mutex;
 use framework::{AllocStats, PAGE_SIZE};
-use super::buddy;
+use crate::buddy;
 
 // ── Slab header (stored at end of slab to keep start aligned) ─────────────────
 

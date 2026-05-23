@@ -13,8 +13,8 @@
 //!   physical address, and maps the rest of the kernel at
 //!   `KERNEL_OFFSET = 0xFFFFFFFF80000000` (the conventional higher-half base).
 //!
-//! - **[`BootInfo`]**: parsed view of the Multiboot2 information structure that
-//!   GRUB passes at boot time.
+//! - **[`KernelBootInfo`]**: protocol-neutral boot information parsed from the
+//!   Multiboot2 information structure that GRUB passes at boot time.
 //!
 //! - **[`entry_point!`]**: macro that declares the kernel's Rust entry function
 //!   and type-checks its signature.
@@ -25,12 +25,10 @@
 //! #![no_std]
 //! #![no_main]
 //!
-//! use barnacle::BootInfo;
-//!
 //! barnacle::entry_point!(my_kernel_main);
 //!
-//! fn my_kernel_main(boot_info: &'static BootInfo) -> ! {
-//!     // boot_info.memory_map(), .command_line(), .framebuffer(), ...
+//! fn my_kernel_main(kbi: &'static barnacle::KernelBootInfo) -> ! {
+//!     // kbi.memory_regions, kbi.hhdm_offset, kbi.kernel_phys_base, ...
 //!     loop {}
 //! }
 //!
@@ -53,72 +51,172 @@
 pub mod info;
 pub use info::BootInfo;
 
+pub use framework::KernelBootInfo;
+use framework::{MemoryRegion, MemoryRegionKind, PAGE_SIZE};
+
+use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use multiboot2::{BootInformation, BootInformationHeader};
 
+// ── HHDM layout ───────────────────────────────────────────────────────────────
+
+/// Higher-half direct-map base address.
+///
+/// Matches `PML4[511] / PDPT_HIGH[510]` in `boot.asm`:
+/// `0xFFFF_FF80_0000_0000 + 510 × 2^30 = 0xFFFF_FFFF_8000_0000`.
+pub const HHDM_OFFSET: usize = 0xFFFF_FFFF_8000_0000;
+
+// Compile-time proof that the constant matches the assembly page tables.
+const _HHDM_CHECK: () = {
+    let expected: u64 = 0xFFFF_FF80_0000_0000u64 + 510u64 * (1u64 << 30);
+    assert!(expected == HHDM_OFFSET as u64, "HHDM_OFFSET does not match boot.asm page tables");
+};
+
+// ── Raw BootInfo storage (for callers that need the low-level MB2 wrapper) ───
+
+struct BootInfoCell(UnsafeCell<MaybeUninit<BootInfo>>);
+unsafe impl Sync for BootInfoCell {}
+static BOOT_INFO: BootInfoCell = BootInfoCell(UnsafeCell::new(MaybeUninit::uninit()));
+
 static INIT_CALLED: AtomicBool = AtomicBool::new(false);
 
-// Wraps MaybeUninit in UnsafeCell to avoid Rust 2024 `static_mut_refs` lint.
-// Written exactly once in `init` before any shared reference is handed out.
-struct BootInfoCell(core::cell::UnsafeCell<MaybeUninit<BootInfo>>);
-// Safety: bare-metal single-core; written once, read-only afterward.
-unsafe impl Sync for BootInfoCell {}
-static BOOT_INFO: BootInfoCell =
-    BootInfoCell(core::cell::UnsafeCell::new(MaybeUninit::uninit()));
-
-/// Parse the Multiboot2 information structure and return a `'static` reference.
+/// Parse the Multiboot2 information structure and return a `'static` reference
+/// to the raw [`BootInfo`] wrapper.
 ///
-/// Called by the [`entry_point!`] macro.  Must not be called directly.
+/// Most kernels should use [`entry_point!`] instead; `init` is provided for
+/// code that needs access to Multiboot2-specific tags not surfaced by
+/// [`KernelBootInfo`].
 ///
 /// # Safety
-///
-/// - `addr` must be the value of `rdi` on entry to `kernel_main` as set by
-///   barnacle's assembly stub (the physical address GRUB placed in `ebx`).
+/// - `addr` must be the physical address GRUB placed in `rbx / edi`.
 /// - Must be called exactly once.
-/// - The Multiboot2 structure at `addr` must remain unmodified and mapped for
-///   the lifetime of the kernel.
 pub unsafe fn init(addr: u64) -> &'static BootInfo {
     assert!(
         !INIT_CALLED.swap(true, Ordering::SeqCst),
         "barnacle::init called more than once"
     );
+    let raw: BootInformation<'static> = unsafe {
+        BootInformation::load(addr as *const BootInformationHeader)
+            .expect("barnacle: invalid Multiboot2 information structure")
+    };
+    unsafe {
+        let ptr: *mut MaybeUninit<BootInfo> = BOOT_INFO.0.get();
+        ptr.write(MaybeUninit::new(BootInfo::new(raw)));
+        &*(ptr as *const BootInfo)
+    }
+}
 
-    // Safety: addr is GRUB-provided, 8-byte aligned, and points to memory
-    // that is identity-mapped and valid for the full kernel lifetime.
-    // Annotating 'static is sound: the MB2 structure lives for the entire run.
+// ── KernelBootInfo storage ────────────────────────────────────────────────────
+
+const MAX_REGIONS: usize = 128;
+
+struct RegionsCell(UnsafeCell<[MemoryRegion; MAX_REGIONS]>);
+unsafe impl Sync for RegionsCell {}
+static REGIONS: RegionsCell = RegionsCell(UnsafeCell::new([MemoryRegion {
+    base: 0, length: 0, kind: MemoryRegionKind::Reserved,
+}; MAX_REGIONS]));
+
+struct KbiCell(UnsafeCell<MaybeUninit<KernelBootInfo>>);
+unsafe impl Sync for KbiCell {}
+static KBI: KbiCell = KbiCell(UnsafeCell::new(MaybeUninit::uninit()));
+
+static PARSE_CALLED: AtomicBool = AtomicBool::new(false);
+
+/// Parse the Multiboot2 information structure and return a `'static`
+/// [`KernelBootInfo`].
+///
+/// Called by the [`entry_point!`] macro.  Translates the Multiboot2 memory
+/// map into the protocol-neutral [`MemoryRegion`] slice and fills
+/// [`KernelBootInfo`] with the HHDM offset and kernel physical base.
+///
+/// # Safety
+/// - `addr` must be the physical address GRUB placed in `rbx / edi`.
+/// - Must be called exactly once.
+pub unsafe fn parse_boot_info(addr: u64) -> &'static KernelBootInfo {
+    assert!(
+        !PARSE_CALLED.swap(true, Ordering::SeqCst),
+        "barnacle::parse_boot_info called more than once"
+    );
+
+    // Safety: addr is GRUB-provided, valid for the kernel lifetime.
     let raw: BootInformation<'static> = unsafe {
         BootInformation::load(addr as *const BootInformationHeader)
             .expect("barnacle: invalid Multiboot2 information structure")
     };
 
+    let regions_ptr: *mut [MemoryRegion; MAX_REGIONS] = REGIONS.0.get();
+    let mut count = 0usize;
+
+    if let Some(mmap) = raw.memory_map_tag() {
+        for area in mmap.memory_areas() {
+            if count >= MAX_REGIONS { break; }
+
+            let raw_base = area.start_address();
+            let raw_end  = area.end_address();
+            let page_base = align_up_u64(raw_base, PAGE_SIZE as u64);
+            let page_end  = align_down_u64(raw_end, PAGE_SIZE as u64);
+            if page_end <= page_base { continue; }
+
+            let kind = match area.typ() {
+                t if t == multiboot2::MemoryAreaType::Available     => MemoryRegionKind::Usable,
+                t if t == multiboot2::MemoryAreaType::AcpiAvailable => MemoryRegionKind::AcpiReclaimable,
+                _                                                    => MemoryRegionKind::Reserved,
+            };
+
+            unsafe {
+                (*regions_ptr)[count] = MemoryRegion { base: page_base, length: page_end - page_base, kind };
+            }
+            count += 1;
+        }
+    }
+
+    // Conventional Multiboot2 load base matches barnacle/kernel.ld LMA (1 MiB).
+    let kernel_phys_base: u64 = 0x10_0000;
+
+    let regions: &'static [MemoryRegion] = unsafe {
+        core::slice::from_raw_parts((*regions_ptr).as_ptr(), count)
+    };
+
+    let kbi = KernelBootInfo { memory_regions: regions, hhdm_offset: HHDM_OFFSET, kernel_phys_base };
+
     unsafe {
-        // Get a raw pointer from the UnsafeCell — no reference to static mut.
-        let ptr: *mut MaybeUninit<BootInfo> = BOOT_INFO.0.get();
-        // Write via raw pointer (does not create a &mut reference).
-        ptr.write(MaybeUninit::new(BootInfo::new(raw)));
-        // Return a shared reference derived from the raw pointer, not the static.
-        &*(ptr as *const BootInfo)
+        let ptr: *mut MaybeUninit<KernelBootInfo> = KBI.0.get();
+        ptr.write(MaybeUninit::new(kbi));
+        &*(ptr as *const KernelBootInfo)
     }
 }
+
+#[inline]
+const fn align_up_u64(addr: u64, align: u64) -> u64 {
+    (addr + align - 1) & !(align - 1)
+}
+
+#[inline]
+const fn align_down_u64(addr: u64, align: u64) -> u64 {
+    addr & !(align - 1)
+}
+
+// ── entry_point! macro ────────────────────────────────────────────────────────
 
 /// Declare the kernel entry point, type-checking its signature.
 ///
 /// The function provided must have the signature:
 /// ```ignore
-/// fn name(boot_info: &'static BootInfo) -> !
+/// fn name(kbi: &'static KernelBootInfo) -> !
 /// ```
 ///
 /// barnacle's assembly stub calls `kernel_main`; this macro defines that
-/// symbol and wires it to the user-supplied function.
+/// symbol, calls [`parse_boot_info`] to build the [`KernelBootInfo`], and
+/// forwards it to the user-supplied function.
 ///
 /// # Example
 ///
 /// ```ignore
 /// barnacle::entry_point!(my_entry);
 ///
-/// fn my_entry(boot_info: &'static barnacle::BootInfo) -> ! {
+/// fn my_entry(kbi: &'static barnacle::KernelBootInfo) -> ! {
 ///     loop {}
 /// }
 /// ```
@@ -132,11 +230,10 @@ macro_rules! entry_point {
         /// structure, passed in `rdi` per the SysV x86_64 ABI.
         #[unsafe(no_mangle)]
         pub extern "C" fn kernel_main(multiboot2_addr: u64) -> ! {
-            // Type-check: compile error if $path does not match the expected signature.
-            let f: fn(&'static $crate::BootInfo) -> ! = $path;
+            let f: fn(&'static $crate::KernelBootInfo) -> ! = $path;
             // Safety: called once by boot.asm with GRUB's valid MB2 pointer.
-            let boot_info = unsafe { $crate::init(multiboot2_addr) };
-            f(boot_info)
+            let kbi = unsafe { $crate::parse_boot_info(multiboot2_addr) };
+            f(kbi)
         }
     };
 }

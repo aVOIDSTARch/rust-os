@@ -10,20 +10,13 @@
 //!
 //! No assembly trampoline is needed — `_start` is a plain Rust `extern "C"`
 //! function linked as the ELF entry point via `crusty_os/limine.ld`.
-//!
-//! # Request statics
-//!
-//! The Limine bootloader scans the kernel image for the `COMMON_MAGIC` pattern
-//! embedded in each `#[used] static` request.  Requests are populated before
-//! the first instruction of `_start` executes.
 
 use limine::{
     request::{ExecutableAddressRequest, HhdmRequest, MemmapRequest},
     memmap,
     BaseRevision,
 };
-use framework::{MemoryRegion, MemoryRegionKind};
-use super::KernelBootInfo;
+use framework::{KernelBootInfo, MemoryRegion, MemoryRegionKind};
 
 // ── Limine request statics ────────────────────────────────────────────────────
 

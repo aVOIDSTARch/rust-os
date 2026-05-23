@@ -3,9 +3,20 @@
 version = 4
 
 [[package]]
+name = "abalone"
+version = "0.1.0"
+dependencies = [
+ "bitwise",
+ "framework",
+ "linked_list_allocator",
+ "spin",
+]
+
+[[package]]
 name = "barnacle"
 version = "0.1.0"
 dependencies = [
+ "framework",
  "multiboot2",
 ]
 
@@ -40,13 +51,13 @@ checksum = "13f6a8a495d2f93fe3d6eb3a224f9aa749a63cfd746ed03eb5ddcbd00ade7d8f"
 name = "crusty_os"
 version = "0.1.0"
 dependencies = [
+ "abalone",
  "barnacle",
  "bitwise",
  "bootloader",
  "framework",
  "lazy_static",
  "limine",
- "linked_list_allocator",
  "pc-keyboard",
  "pic8259",
  "platform",
