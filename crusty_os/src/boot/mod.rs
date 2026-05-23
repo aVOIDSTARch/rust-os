@@ -7,20 +7,11 @@
 //! |--------------------|----------------|---------------|--------------------------|
 //! | `boot-multiboot2`  | Multiboot2     | `kernel_main` | `barnacle::entry_point!` |
 //! | `boot-limine`      | Limine         | `_start`      | `boot::limine` (below)   |
-//! | `use-bootloader`   | blog_os loader | `kmain`       | `main.rs` directly       |
-
-pub use framework::KernelBootInfo;
 
 // ── Compile-time mutual-exclusion guards ──────────────────────────────────────
 
 #[cfg(all(feature = "boot-multiboot2", feature = "boot-limine"))]
 compile_error!("boot-multiboot2 and boot-limine are mutually exclusive.");
-
-#[cfg(all(feature = "boot-multiboot2", feature = "use-bootloader"))]
-compile_error!("boot-multiboot2 and use-bootloader are mutually exclusive.");
-
-#[cfg(all(feature = "boot-limine", feature = "use-bootloader"))]
-compile_error!("boot-limine and use-bootloader are mutually exclusive.");
 
 // ── Protocol modules ──────────────────────────────────────────────────────────
 

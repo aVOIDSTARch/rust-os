@@ -82,6 +82,6 @@ pub unsafe extern "C" fn _start() -> ! {
 
     let boot_info = KernelBootInfo { memory_regions: regions, hhdm_offset, kernel_phys_base };
 
-    crate::allocator_init(&boot_info);
+    crusty_os::allocator_init(&boot_info);
     crate::kernel_main_post_heap()
 }

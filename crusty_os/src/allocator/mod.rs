@@ -3,16 +3,7 @@
 //! All allocator implementations live in `abalone`.  This module:
 //!   - Re-exports the sub-modules so `crusty_os::allocator::buddy::…` paths
 //!     continue to work from the rest of the kernel and from integration tests.
-//!   - Declares the `#[global_allocator]` statics (feature-gated).
-//!   - Provides `init_heap` for the `use-bootloader` path (requires x86_64
-//!     page-table machinery not available in `abalone`).
-//!
-//! ## Allocator selection
-//!
-//! | Feature                           | Global allocator                     |
-//! |-----------------------------------|--------------------------------------|
-//! | `boot-multiboot2` / `boot-limine` | [`abalone::tlsf::TlsfAllocator`] backed by [`abalone::buddy`] |
-//! | `use-bootloader` (legacy)         | [`abalone::bump::BumpAllocator`]     |
+//!   - Declares the `#[global_allocator]` static (feature-gated).
 
 pub use abalone::{buddy, slab, tlsf, bump, linked_list, Locked, align_up};
 
@@ -147,46 +138,3 @@ mod buddy_tests {
 #[cfg(any(feature = "boot-multiboot2", feature = "boot-limine"))]
 #[global_allocator]
 pub static TLSF: abalone::tlsf::TlsfAllocator = abalone::tlsf::TlsfAllocator::new();
-
-// ── Global allocator (legacy use-bootloader path) ─────────────────────────────
-
-#[cfg(feature = "use-bootloader")]
-use x86_64::{
-    structures::paging::{
-        mapper::MapToError, FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB,
-    },
-    VirtAddr,
-};
-
-#[cfg(feature = "use-bootloader")]
-pub const HEAP_START: usize = 0x_4444_4444_0000;
-#[cfg(feature = "use-bootloader")]
-pub const HEAP_SIZE:  usize = 100 * 1024;
-
-#[cfg(feature = "use-bootloader")]
-#[global_allocator]
-static ALLOCATOR: Locked<abalone::bump::BumpAllocator> = Locked::new(abalone::bump::BumpAllocator::new());
-
-#[cfg(feature = "use-bootloader")]
-pub fn init_heap(
-    mapper:          &mut impl Mapper<Size4KiB>,
-    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-) -> Result<(), MapToError<Size4KiB>> {
-    let page_range = {
-        let heap_start      = VirtAddr::new(HEAP_START as u64);
-        let heap_end        = heap_start + HEAP_SIZE - 1u64;
-        let heap_start_page = Page::containing_address(heap_start);
-        let heap_end_page   = Page::containing_address(heap_end);
-        Page::range_inclusive(heap_start_page, heap_end_page)
-    };
-
-    for page in page_range {
-        let frame = frame_allocator
-            .allocate_frame()
-            .ok_or(MapToError::FrameAllocationFailed)?;
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-        unsafe { mapper.map_to(page, frame, flags, frame_allocator)?.flush() };
-    }
-    unsafe { ALLOCATOR.lock().init(HEAP_START, HEAP_SIZE) };
-    Ok(())
-}

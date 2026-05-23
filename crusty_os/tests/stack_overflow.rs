@@ -3,13 +3,6 @@
 //! Deliberately triggers infinite recursion to exhaust the stack.  The
 //! expected outcome is a double-fault exception, caught by the test-specific
 //! IDT loaded here, which prints `[ok]` and exits QEMU with success.
-//!
-//! If execution somehow continues after the overflow (tail-call optimization,
-//! or the double fault wasn't caught), the `panic!` at the end ensures the
-//! test fails rather than hanging.
-//!
-//! Uses `harness = false` (see Cargo.toml) because it bypasses the normal
-//! test runner — the "pass" condition is the double fault itself.
 
 #![no_std]
 #![no_main]
@@ -22,8 +15,6 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 // ── Test-specific IDT ─────────────────────────────────────────────────────────
 
 lazy_static! {
-    /// A minimal IDT with only a double-fault handler, using the IST slot
-    /// configured by `crusty_os::gdt` for the kernel double-fault stack.
     static ref TEST_IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
         unsafe {
@@ -35,16 +26,20 @@ lazy_static! {
     };
 }
 
-/// Load the test-specific IDT (replaces the kernel's normal IDT for this run).
 pub fn init_test_idt() {
     TEST_IDT.load();
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-/// Initialize GDT (for IST), load the test IDT, then trigger the overflow.
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    crusty_os::test_panic_handler(info)
+}
+
+barnacle::entry_point!(test_entry);
+
+fn test_entry(_kbi: &'static crusty_os::KernelBootInfo) -> ! {
     unsafe { platform::init(); }
     serial_print!("stack_overflow::stack_overflow...\t");
 
@@ -58,7 +53,6 @@ pub extern "C" fn _start() -> ! {
 
 // ── Double-fault handler ──────────────────────────────────────────────────────
 
-/// Invoked by the CPU on double fault: print success and exit QEMU.
 extern "x86-interrupt" fn test_double_fault_handler(
     _stack_frame: InterruptStackFrame,
     _error_code: u64,
@@ -73,13 +67,5 @@ extern "x86-interrupt" fn test_double_fault_handler(
 #[allow(unconditional_recursion)]
 fn stack_overflow() {
     stack_overflow();
-    // Volatile read prevents the compiler from optimizing this into a tail call.
     volatile::Volatile::new(0).read();
-}
-
-// ── Panic handler ─────────────────────────────────────────────────────────────
-
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    crusty_os::test_panic_handler(info)
 }

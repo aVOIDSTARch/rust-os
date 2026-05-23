@@ -2,8 +2,7 @@
 //!
 //! Verifies that after `crusty_os::init()` the GDT is loaded, the IDT is
 //! populated with all exception and IRQ handlers, and the PIC is unmasked.
-//! Tests here do not require heap access — the entry point mirrors
-//! `basic_boot.rs` and needs no `BootInfo`.
+//! No heap access required.
 
 #![no_std]
 #![no_main]
@@ -11,15 +10,14 @@
 #![test_runner(crusty_os::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
-/// Panic handler: print the failure message over serial, then exit QEMU.
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     crusty_os::test_panic_handler(info)
 }
 
-/// Entry point: platform init → kernel subsystems → test runner → halt.
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+barnacle::entry_point!(test_entry);
+
+fn test_entry(_kbi: &'static crusty_os::KernelBootInfo) -> ! {
     unsafe { platform::init(); }
     crusty_os::init();
     test_main();
@@ -29,19 +27,12 @@ pub extern "C" fn _start() -> ! {
 // ── Test cases ────────────────────────────────────────────────────────────────
 
 /// Breakpoint exception is handled as a trap and execution resumes.
-///
-/// If the IDT has no breakpoint handler the CPU would deliver a double fault;
-/// the QEMU session would then exit with the failure code instead of reaching
-/// the assertion below.
 #[test_case]
 fn test_breakpoint_handled_as_trap() {
     x86_64::instructions::interrupts::int3();
 }
 
 /// Hardware interrupts are enabled after `crusty_os::init()`.
-///
-/// `init()` calls `x86_64::instructions::interrupts::enable()` as its last
-/// step.  Verifying the flag here confirms the sequence ran to completion.
 #[test_case]
 fn test_interrupts_enabled_after_init() {
     assert!(
@@ -50,8 +41,7 @@ fn test_interrupts_enabled_after_init() {
     );
 }
 
-/// `without_interrupts` disables interrupts for its closure and re-enables
-/// them on return, even when the previous state was "enabled".
+/// `without_interrupts` disables and re-enables interrupts correctly.
 #[test_case]
 fn test_without_interrupts_restores_enabled_state() {
     assert!(x86_64::instructions::interrupts::are_enabled());
@@ -62,8 +52,6 @@ fn test_without_interrupts_restores_enabled_state() {
 }
 
 /// Multiple consecutive breakpoints are all handled without corrupting the IDT.
-///
-/// Ensures the handler returns cleanly and the IDT is reusable on re-entry.
 #[test_case]
 fn test_repeated_breakpoints() {
     for _ in 0..5 {

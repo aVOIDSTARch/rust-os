@@ -20,20 +20,9 @@ version = "0.1.0"
 edition = "2024"
 authors = ["Louis Casinelli"]
 
-[package.metadata.bootimage]
-test-args = [
-  "-device",
-  "isa-debug-exit,iobase=0xf4,iosize=0x04",
-  "-serial", "stdio",
-  "-display", "none",
-  ]
-test-success-exit-code = 33
-test-timeout = 300
-
 [features]
 # Exactly one boot feature must be active per binary build.
-default        = ["use-bootloader"]
-use-bootloader = ["dep:bootloader"]
+default         = ["boot-multiboot2"]
 boot-multiboot2 = ["dep:barnacle"]
 boot-limine     = ["dep:limine"]
 
@@ -41,7 +30,6 @@ boot-limine     = ["dep:limine"]
 framework  = { path = "../framework" }
 platform   = { path = "../platform" }
 abalone    = { path = "../abalone" }
-bootloader = { version = "0.9.0", features = ["map_physical_memory"], optional = true }
 barnacle   = { path = "../barnacle", optional = true }
 limine     = { version = "0.6", default-features = false, optional = true }
 volatile   = "0.2.6"

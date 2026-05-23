@@ -48,13 +48,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13f6a8a495d2f93fe3d6eb3a224f9aa749a63cfd746ed03eb5ddcbd00ade7d8f"
 
 [[package]]
+name = "carapace"
+version = "0.1.0"
+
+[[package]]
+name = "chalae"
+version = "0.1.0"
+
+[[package]]
+name = "chitin"
+version = "0.1.0"
+
+[[package]]
 name = "crusty_os"
 version = "0.1.0"
 dependencies = [
  "abalone",
  "barnacle",
  "bitwise",
- "bootloader",
  "framework",
  "lazy_static",
  "limine",
