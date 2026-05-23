@@ -12,4 +12,4 @@ target = "x86_64-crusty_os.json"
 # test-runner.sh is in the workspace root; cargo inherits the invoking
 # directory as CWD, so `cargo test` from the workspace root finds it.
 [target.'cfg(target_os = "none")']
-runner = "/bin/bash /Users/louisc/rust-os/test-runner.sh"
+runner = "bash test-runner.sh"
