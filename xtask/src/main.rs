@@ -2,6 +2,7 @@
 //!
 //! Usage:
 //!   cargo xtask check-deps                        — verify required tools
+//!   cargo xtask test [<args>…]                    — run crusty_os test suite via QEMU
 //!   cargo xtask iso [--kernel <elf>] [--boot <b>] — build a bootable ISO
 //!   cargo xtask run [--kernel <elf>] [--boot <b>] — build ISO and boot in QEMU
 //!
@@ -25,6 +26,7 @@ fn main() {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
         Some("check-deps") => check_deps(),
+        Some("test") => cmd_test(args),
         Some("iso") => {
             let (boot, kernel) = parse_args(args);
             cmd_iso(boot, kernel);
@@ -34,7 +36,7 @@ fn main() {
             cmd_run(boot, kernel);
         }
         other => {
-            eprintln!("usage: cargo xtask <check-deps | iso | run> [--kernel <elf>] [--boot grub|multiboot2|limine]");
+            eprintln!("usage: cargo xtask <check-deps | test | iso | run> [--kernel <elf>] [--boot grub|multiboot2|limine]");
             if let Some(cmd) = other {
                 eprintln!("unknown subcommand: {cmd}");
             }
@@ -69,6 +71,34 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> (Boot, Option<PathBuf>)
         }
     }
     (boot, kernel)
+}
+
+// ── Test command ─────────────────────────────────────────────────────────────
+
+/// Run the crusty_os test suite.
+///
+/// Delegates to `cargo test -p crusty_os`, which compiles every test binary
+/// and runs each through `bootimage runner` (QEMU with the ISA debug-exit
+/// device).  Any extra arguments are forwarded verbatim, e.g.:
+///
+///   cargo xtask test -- heap_allocation   ← run only that test binary
+///   cargo xtask test --test heap_stress   ← same, explicit flag form
+fn cmd_test(args: impl Iterator<Item = String>) {
+    let root  = workspace_root();
+    let extra: Vec<String> = args.collect();
+
+    println!("Running: cargo test -p crusty_os{}", if extra.is_empty() { String::new() } else { format!(" {}", extra.join(" ")) });
+
+    let status = std::process::Command::new("cargo")
+        .arg("test")
+        .arg("-p")
+        .arg("crusty_os")
+        .args(&extra)
+        .current_dir(&root)
+        .status()
+        .expect("failed to run `cargo test`");
+
+    std::process::exit(status.code().unwrap_or(1));
 }
 
 // ── Dependency check ──────────────────────────────────────────────────────────

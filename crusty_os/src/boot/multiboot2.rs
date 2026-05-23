@@ -1,14 +1,19 @@
-// Multiboot2 / GRUB boot adapter.
-//
-// boot.asm validates the magic, sets up page tables, and enters long mode.
-// By the time `kernel_main` is called:
-//   * rdi = physical address of the Multiboot2 information structure
-//   * CPU is in 64-bit long mode
-//   * Stack is the bootstrap stack from boot.asm
-//
-// Only the first 2 MB of physical RAM is accessible via HHDM at boot (one huge
-// page set up by boot.asm). The buddy allocator is restricted to physical
-// addresses within [HEAP_START_PHYS, BOOT_MAPPED_PHYS).
+//! Multiboot2 / GRUB boot adapter.
+//!
+//! `barnacle`'s `boot.asm` validates the Multiboot2 magic, sets up minimal
+//! page tables (identity-maps and HHDM-maps the first 2 MiB as a 2 MiB huge
+//! page), and jumps to `kernel_main` in 64-bit long mode with:
+//!
+//! - `rdi` = physical address of the Multiboot2 information structure
+//! - CPU in 64-bit long mode with interrupts disabled
+//! - Stack = bootstrap stack from `boot.asm`
+//!
+//! # Memory window at boot
+//!
+//! Only physical `[0, 2 MiB)` is accessible via HHDM at this point.
+//! [`HEAP_START_PHYS`] is set conservatively above the kernel image
+//! (~1.25 MiB) so the buddy allocator only touches pages that are safely
+//! within the mapped window.
 
 use framework::{MemoryRegion, MemoryRegionKind, PAGE_SIZE};
 use barnacle::info::MemoryAreaType;

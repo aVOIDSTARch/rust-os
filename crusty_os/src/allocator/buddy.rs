@@ -184,7 +184,6 @@ impl BuddyAllocator {
                 page_idx = page_idx.min(buddy_idx);
                 ord     += 1;
             } else {
-                self.bitmaps[ord].toggle(pair_bit);
                 break;
             }
         }
@@ -226,4 +225,142 @@ pub fn alloc_pages(order: usize) -> Option<*mut u8> {
 #[inline]
 pub unsafe fn dealloc_pages(ptr: *mut u8, order: usize) {
     BUDDY.lock().dealloc_pages(ptr, order);
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+//
+// Each test constructs a fresh `BuddyAllocator` (local variable, no global
+// state) and feeds it a portion of a page-aligned static array.  Tests run
+// sequentially on bare metal; reusing the same backing memory across tests is
+// safe because `add_region` overwrites the FreeBlock nodes on entry.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[repr(align(4096))]
+    struct PageAligned([u8; PAGE_SIZE * 16]);
+
+    static mut TEST_MEM: PageAligned = PageAligned([0u8; PAGE_SIZE * 16]);
+
+    fn test_base() -> usize {
+        unsafe { core::ptr::addr_of!(TEST_MEM) as usize }
+    }
+
+    #[test_case]
+    fn alloc_and_dealloc_single_page() {
+        let mut buddy = BuddyAllocator::new();
+        let base = test_base();
+        unsafe {
+            buddy.add_region(base, 4);
+            let ptr = buddy.alloc_pages(0).expect("order-0 alloc failed");
+            assert!(ptr as usize >= base);
+            assert_eq!(buddy.stats().alloc_count, 1);
+            buddy.dealloc_pages(ptr, 0);
+            assert_eq!(buddy.stats().dealloc_count, 1);
+            assert_eq!(buddy.stats().used_bytes, 0);
+        }
+    }
+
+    #[test_case]
+    fn alloc_order1_spans_two_pages() {
+        let mut buddy = BuddyAllocator::new();
+        let base = test_base();
+        unsafe {
+            buddy.add_region(base, 4);
+            let ptr = buddy.alloc_pages(1).expect("order-1 alloc failed");
+            assert_eq!(buddy.stats().used_bytes, (2 * PAGE_SIZE) as u64);
+            buddy.dealloc_pages(ptr, 1);
+            assert_eq!(buddy.stats().used_bytes, 0);
+        }
+    }
+
+    #[test_case]
+    fn two_order0_allocs_do_not_overlap() {
+        let mut buddy = BuddyAllocator::new();
+        let base = test_base();
+        unsafe {
+            buddy.add_region(base, 4);
+            let p0 = buddy.alloc_pages(0).expect("first order-0 alloc");
+            let p1 = buddy.alloc_pages(0).expect("second order-0 alloc");
+            // They must be at least PAGE_SIZE apart (non-overlapping).
+            let diff = (p0 as isize - p1 as isize).unsigned_abs();
+            assert!(diff >= PAGE_SIZE, "allocations overlap: p0={p0:?} p1={p1:?}");
+            buddy.dealloc_pages(p0, 0);
+            buddy.dealloc_pages(p1, 0);
+        }
+    }
+
+    #[test_case]
+    fn coalescing_restores_higher_order_block() {
+        let mut buddy = BuddyAllocator::new();
+        let base = test_base();
+        unsafe {
+            buddy.add_region(base, 4);
+            // Alloc two adjacent order-1 blocks, consuming all 4 pages.
+            let a = buddy.alloc_pages(1).expect("first order-1 alloc");
+            let b = buddy.alloc_pages(1).expect("second order-1 alloc");
+            assert!(buddy.alloc_pages(0).is_none(), "heap should be full");
+
+            // Dealloc both; the allocator must coalesce them back.
+            buddy.dealloc_pages(a, 1);
+            buddy.dealloc_pages(b, 1);
+
+            // After coalescing, an order-2 (4-page) alloc must succeed.
+            let full = buddy.alloc_pages(2).expect("order-2 alloc after coalesce");
+            buddy.dealloc_pages(full, 2);
+        }
+    }
+
+    #[test_case]
+    fn oom_returns_none() {
+        let mut buddy = BuddyAllocator::new();
+        let base = test_base();
+        unsafe {
+            buddy.add_region(base, 1); // exactly one page
+            let _p = buddy.alloc_pages(0).expect("first alloc must succeed");
+            assert!(buddy.alloc_pages(0).is_none(), "second alloc must fail (OOM)");
+        }
+    }
+
+    #[test_case]
+    fn stats_track_used_and_free_bytes() {
+        let mut buddy = BuddyAllocator::new();
+        let base = test_base();
+        unsafe {
+            buddy.add_region(base, 4);
+            let initial_free = buddy.stats().free_bytes;
+            assert_eq!(buddy.stats().used_bytes, 0);
+
+            let p = buddy.alloc_pages(0).expect("alloc");
+            assert_eq!(buddy.stats().used_bytes, PAGE_SIZE as u64);
+            assert_eq!(buddy.stats().free_bytes, initial_free - PAGE_SIZE as u64);
+            assert_eq!(buddy.stats().alloc_count, 1);
+
+            buddy.dealloc_pages(p, 0);
+            assert_eq!(buddy.stats().used_bytes, 0);
+            assert_eq!(buddy.stats().free_bytes, initial_free);
+            assert_eq!(buddy.stats().dealloc_count, 1);
+        }
+    }
+
+    #[test_case]
+    fn peak_bytes_tracks_high_water_mark() {
+        let mut buddy = BuddyAllocator::new();
+        let base = test_base();
+        unsafe {
+            buddy.add_region(base, 4);
+            let p0 = buddy.alloc_pages(0).expect("alloc p0");
+            let p1 = buddy.alloc_pages(0).expect("alloc p1");
+            let peak_after_two = buddy.stats().peak_bytes;
+            assert_eq!(peak_after_two, 2 * PAGE_SIZE as u64);
+
+            buddy.dealloc_pages(p1, 0);
+            // Peak must not decrease after dealloc.
+            assert_eq!(buddy.stats().peak_bytes, peak_after_two);
+
+            buddy.dealloc_pages(p0, 0);
+            assert_eq!(buddy.stats().peak_bytes, peak_after_two);
+        }
+    }
 }

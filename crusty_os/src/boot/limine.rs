@@ -1,12 +1,21 @@
-// Limine boot protocol adapter (limine crate 0.6.x).
-//
-// Limine transfers control to `_start` already in 64-bit long mode with:
-//   * A valid stack (≥ 16 KiB, 16-byte aligned)
-//   * A higher-half direct map of all physical memory
-//   * BSS zeroed
-//   * All Limine request responses populated
-//
-// No assembly trampoline is needed.
+//! Limine boot protocol adapter (`limine` crate 0.6.x).
+//!
+//! Limine transfers control to `_start` already in 64-bit long mode with:
+//!
+//! - A valid stack (≥ 16 KiB, 16-byte aligned)
+//! - A full higher-half direct map of all physical memory (HHDM offset
+//!   reported via `HhdmRequest`)
+//! - BSS zeroed
+//! - All Limine request responses populated in the request statics
+//!
+//! No assembly trampoline is needed — `_start` is a plain Rust `extern "C"`
+//! function linked as the ELF entry point via `crusty_os/limine.ld`.
+//!
+//! # Request statics
+//!
+//! The Limine bootloader scans the kernel image for the `COMMON_MAGIC` pattern
+//! embedded in each `#[used] static` request.  Requests are populated before
+//! the first instruction of `_start` executes.
 
 use limine::{
     request::{ExecutableAddressRequest, HhdmRequest, MemmapRequest},

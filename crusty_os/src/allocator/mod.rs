@@ -1,9 +1,24 @@
-// Heap allocator stack.
-//
-// boot-multiboot2 / boot-limine:  buddy → TLSF (#[global_allocator])
-// use-bootloader (legacy):        BumpAllocator (#[global_allocator])
-//
-// bump and linked_list are kept as non-global submodules for reference.
+//! Heap allocator stack.
+//!
+//! Two allocator configurations are available, selected by Cargo feature:
+//!
+//! | Feature                           | Global allocator          |
+//! |-----------------------------------|---------------------------|
+//! | `boot-multiboot2` / `boot-limine` | [`tlsf::TlsfAllocator`] backed by [`buddy`] |
+//! | `use-bootloader` (legacy)         | [`bump::BumpAllocator`]   |
+//!
+//! ## Layered design (new paths)
+//!
+//! ```text
+//! GlobalAlloc  (Box / Vec / alloc::*)
+//!   └── TlsfAllocator  — O(1) alloc/dealloc, sub-page granularity
+//!         └── BuddyAllocator — page-granularity, binary buddy system
+//! ```
+//!
+//! [`slab::SlabCache<T>`] provides a typed cache on top of the buddy allocator
+//! for high-frequency fixed-size allocations.
+//!
+//! `bump` and `linked_list` are kept as non-global reference implementations.
 
 pub mod buddy;
 pub mod slab;
