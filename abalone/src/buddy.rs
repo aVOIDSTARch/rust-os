@@ -103,11 +103,11 @@ impl BuddyAllocator {
             let block_pages = 1usize << order;
 
             if block_pages > remaining || (offset_pages & (block_pages - 1)) != 0 {
-                self.free_block(offset_pages, 0);
+                unsafe { self.free_block(offset_pages, 0); }
                 offset_pages += 1;
                 remaining    -= 1;
             } else {
-                self.free_block(offset_pages, order);
+                unsafe { self.free_block(offset_pages, order); }
                 offset_pages += block_pages;
                 remaining    -= block_pages;
             }
@@ -176,10 +176,12 @@ impl BuddyAllocator {
             if self.bitmaps[ord].test(pair_bit) {
                 let buddy_addr = self.base + buddy_idx * PAGE_SIZE;
                 let buddy_ptr  = buddy_addr as *mut FreeBlock;
-                let buddy      = &*buddy_ptr;
-                if !buddy.prev.is_null() { (*buddy.prev).next = buddy.next; }
-                else                     { self.free_lists[ord] = buddy.next; }
-                if !buddy.next.is_null() { (*buddy.next).prev = buddy.prev; }
+                unsafe {
+                    let buddy = &*buddy_ptr;
+                    if !buddy.prev.is_null() { (*buddy.prev).next = buddy.next; }
+                    else                     { self.free_lists[ord] = buddy.next; }
+                    if !buddy.next.is_null() { (*buddy.next).prev = buddy.prev; }
+                }
                 self.bitmaps[ord].toggle(pair_bit);
                 page_idx = page_idx.min(buddy_idx);
                 ord     += 1;
@@ -188,7 +190,7 @@ impl BuddyAllocator {
             }
         }
 
-        self.free_block(page_idx, ord);
+        unsafe { self.free_block(page_idx, ord); }
 
         let bytes               = (1usize << order) * PAGE_SIZE;
         self.stats.used_bytes  -= bytes as u64;
@@ -199,10 +201,12 @@ impl BuddyAllocator {
     unsafe fn free_block(&mut self, page_idx: usize, order: usize) {
         let addr = self.base + page_idx * PAGE_SIZE;
         let node = addr as *mut FreeBlock;
-        (*node).prev = ptr::null_mut();
-        (*node).next = self.free_lists[order];
-        if !self.free_lists[order].is_null() {
-            (*self.free_lists[order]).prev = node;
+        unsafe {
+            (*node).prev = ptr::null_mut();
+            (*node).next = self.free_lists[order];
+            if !self.free_lists[order].is_null() {
+                (*self.free_lists[order]).prev = node;
+            }
         }
         self.free_lists[order] = node;
         self.bitmaps[order].toggle(page_idx >> (order + 1));
@@ -224,7 +228,7 @@ pub fn alloc_pages(order: usize) -> Option<*mut u8> {
 /// `ptr` must originate from `alloc_pages` at the same `order`.
 #[inline]
 pub unsafe fn dealloc_pages(ptr: *mut u8, order: usize) {
-    BUDDY.lock().dealloc_pages(ptr, order);
+    unsafe { BUDDY.lock().dealloc_pages(ptr, order); }
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────

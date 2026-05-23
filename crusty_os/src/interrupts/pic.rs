@@ -66,7 +66,7 @@ pub fn init() {
 /// Sending a spurious EOI can corrupt PIC state.
 #[inline]
 pub unsafe fn end_of_interrupt(vector: u8) {
-    PICS.lock().notify_end_of_interrupt(vector);
+    unsafe { PICS.lock().notify_end_of_interrupt(vector); }
 }
 
 /// Check the master PIC's In-Service Register and send EOI only if the
@@ -77,12 +77,13 @@ pub unsafe fn end_of_interrupt(vector: u8) {
 /// # Safety
 /// Must be called from the IRQ7 handler before any EOI.
 pub unsafe fn eoi_if_not_spurious_master() -> bool {
-    if master_isr_bit(7) {
-        end_of_interrupt(PIC_IRQ_LPT1);
-        true
-    } else {
-        // Spurious — do NOT send EOI.
-        false
+    unsafe {
+        if master_isr_bit(7) {
+            end_of_interrupt(PIC_IRQ_LPT1);
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -94,14 +95,14 @@ pub unsafe fn eoi_if_not_spurious_master() -> bool {
 /// # Safety
 /// Must be called from the IRQ15 handler before any EOI.
 pub unsafe fn eoi_if_not_spurious_slave() -> bool {
-    if slave_isr_bit(7) {
-        // Genuine IRQ15: EOI slave then master.
-        end_of_interrupt(PIC_IRQ_ATA_SECONDARY);
-        true
-    } else {
-        // Spurious from slave — must still EOI master (cascade asserted).
-        master_eoi_only();
-        false
+    unsafe {
+        if slave_isr_bit(7) {
+            end_of_interrupt(PIC_IRQ_ATA_SECONDARY);
+            true
+        } else {
+            master_eoi_only();
+            false
+        }
     }
 }
 
@@ -161,20 +162,23 @@ pub fn read_imr() -> u16 {
 /// Read the master PIC's In-Service Register and return whether bit `bit`
 /// (0–7) is set, indicating an in-service (acknowledged) interrupt.
 unsafe fn master_isr_bit(bit: u8) -> bool {
-    // OCW3: read ISR command = 0x0B
-    Port::<u8>::new(0x20).write(0x0Bu8);
-    let isr: u8 = Port::<u8>::new(0x20).read();
-    isr & (1 << bit) != 0
+    unsafe {
+        Port::<u8>::new(0x20).write(0x0Bu8);
+        let isr: u8 = Port::<u8>::new(0x20).read();
+        isr & (1 << bit) != 0
+    }
 }
 
 /// Read the slave PIC's In-Service Register bit.
 unsafe fn slave_isr_bit(bit: u8) -> bool {
-    Port::<u8>::new(0xA0).write(0x0Bu8);
-    let isr: u8 = Port::<u8>::new(0xA0).read();
-    isr & (1 << bit) != 0
+    unsafe {
+        Port::<u8>::new(0xA0).write(0x0Bu8);
+        let isr: u8 = Port::<u8>::new(0xA0).read();
+        isr & (1 << bit) != 0
+    }
 }
 
 /// Send EOI to master PIC only (used for spurious slave IRQs).
 unsafe fn master_eoi_only() {
-    Port::<u8>::new(0x20).write(0x20u8);
+    unsafe { Port::<u8>::new(0x20).write(0x20u8); }
 }

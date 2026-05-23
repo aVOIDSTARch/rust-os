@@ -61,21 +61,22 @@ pub unsafe fn allocator_init(info: &framework::KernelBootInfo) {
     {
         let mut b = buddy::BUDDY.lock();
         for region in info.regions_of_kind(MemoryRegionKind::Usable) {
-            // Multiboot2: only physical [HEAP_START_PHYS, 2 MB) is HHDM-mapped
-            // at boot. Regions outside this window are silently skipped.
+            // Multiboot2: only physical [kernel_end_phys, 2 MB) is HHDM-mapped
+            // at boot.  heap_start is derived from the actual kernel end (page-
+            // aligned) so the buddy region never overlaps the kernel binary.
             #[cfg(feature = "boot-multiboot2")]
             {
-                const HEAP_START_PHYS: u64 = 0x16_0000;
+                let heap_start_phys = barnacle::kernel_end_phys();
                 const BOOT_MAPPED_PHYS: u64 = 2 * 1024 * 1024;
 
-                let clamped_base = region.base.max(HEAP_START_PHYS);
+                let clamped_base = region.base.max(heap_start_phys);
                 let clamped_end  = (region.base + region.length).min(BOOT_MAPPED_PHYS);
                 if clamped_end <= clamped_base { continue; }
 
                 let virt_base  = info.hhdm_offset + clamped_base as usize;
                 let page_count = ((clamped_end - clamped_base) as usize) / PAGE_SIZE;
                 if page_count > 0 {
-                    b.add_region(virt_base, page_count);
+                    unsafe { b.add_region(virt_base, page_count); }
                 }
             }
 
@@ -88,7 +89,7 @@ pub unsafe fn allocator_init(info: &framework::KernelBootInfo) {
                 let virt_base  = info.hhdm_offset + page_base;
                 let page_count = (page_end - page_base) / PAGE_SIZE;
                 if page_count > 0 {
-                    b.add_region(virt_base, page_count);
+                    unsafe { b.add_region(virt_base, page_count); }
                 }
             }
         }
@@ -98,10 +99,10 @@ pub unsafe fn allocator_init(info: &framework::KernelBootInfo) {
     // Multiboot2: order 6 = 64 pages = 256 KiB (fits in the ~640 KiB window).
     // Limine:     order 8 = 256 pages = 1 MiB  (ample RAM available).
     #[cfg(feature = "boot-multiboot2")]
-    crate::allocator::TLSF.init(6);
+    unsafe { crate::allocator::TLSF.init(6); }
 
     #[cfg(feature = "boot-limine")]
-    crate::allocator::TLSF.init(8);
+    unsafe { crate::allocator::TLSF.init(8); }
 }
 
 // ── Re-exports for integration tests ─────────────────────────────────────────

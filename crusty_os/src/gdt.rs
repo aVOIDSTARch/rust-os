@@ -9,10 +9,10 @@ pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 pub const NMI_IST_INDEX:          u16 = 1;
 pub const MACHINE_CHECK_IST_INDEX: u16 = 2;
 
-// Struct to hold the segment selectors for the code and TSS segments.
 struct Selectors {
     code_selector: SegmentSelector,
-    tss_selector: SegmentSelector,
+    data_selector: SegmentSelector,
+    tss_selector:  SegmentSelector,
 }
 
 macro_rules! ist_stack {
@@ -28,36 +28,33 @@ macro_rules! ist_stack {
 lazy_static! {
     static ref TSS: TaskStateSegment = {
         let mut tss = TaskStateSegment::new();
-        unsafe {
-            ist_stack!(tss, DOUBLE_FAULT_IST_INDEX);
-            ist_stack!(tss, NMI_IST_INDEX);
-            ist_stack!(tss, MACHINE_CHECK_IST_INDEX);
-        }
+        ist_stack!(tss, DOUBLE_FAULT_IST_INDEX);
+        ist_stack!(tss, NMI_IST_INDEX);
+        ist_stack!(tss, MACHINE_CHECK_IST_INDEX);
         tss
     };
 }
 
-// Initializes the GDT.
 lazy_static! {
     static ref GDT: (GlobalDescriptorTable, Selectors) = {
         let mut gdt = GlobalDescriptorTable::new();
         let code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
-        let tss_selector = gdt.add_entry(Descriptor::tss_segment(&TSS));
-        ( gdt, Selectors {
-            code_selector,
-            tss_selector,
-        })
+        let data_selector = gdt.add_entry(Descriptor::kernel_data_segment());
+        let tss_selector  = gdt.add_entry(Descriptor::tss_segment(&TSS));
+        (gdt, Selectors { code_selector, data_selector, tss_selector })
     };
 }
 
-// Loads the GDT
 pub fn init() {
-    use x86_64::instructions::segmentation::{CS, Segment};
+    use x86_64::instructions::segmentation::{CS, DS, SS, Segment};
     use x86_64::instructions::tables::load_tss;
+    use x86_64::structures::gdt::SegmentSelector;
 
     GDT.0.load();
     unsafe {
         CS::set_reg(GDT.1.code_selector);
+        DS::set_reg(GDT.1.data_selector);
+        SS::set_reg(SegmentSelector(0));
         load_tss(GDT.1.tss_selector);
     }
 }

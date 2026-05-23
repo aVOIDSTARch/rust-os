@@ -71,6 +71,10 @@ SECTIONS {
         *(.bss .bss.*)
     }
 
+    /* Physical address of the first byte past the kernel image.
+     * Used by allocator_init to start the heap above the kernel. */
+    _kernel_end_phys = ADDR(.bss) - KERNEL_OFFSET + SIZEOF(.bss);
+
     /DISCARD/ : {
         *(.eh_frame)
         *(.note .note.*)

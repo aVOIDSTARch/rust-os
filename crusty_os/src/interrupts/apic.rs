@@ -129,11 +129,11 @@ impl LocalApic {
     // Volatile accesses prevent the compiler from reordering or eliding them.
 
     unsafe fn read(&self, offset: u32) -> u32 {
-        core::ptr::read_volatile(self.base.add((offset / 4) as usize))
+        unsafe { core::ptr::read_volatile(self.base.add((offset / 4) as usize)) }
     }
 
     unsafe fn write(&self, offset: u32, value: u32) {
-        core::ptr::write_volatile(self.base.add((offset / 4) as usize), value);
+        unsafe { core::ptr::write_volatile(self.base.add((offset / 4) as usize), value); }
     }
 
     /// Enable the local APIC and set the spurious interrupt vector.
@@ -142,11 +142,8 @@ impl LocalApic {
     /// it must be handled but must NOT send an EOI.  Use a dedicated high
     /// vector (e.g., 0xFF) and leave its IDT entry as a no-op.
     pub unsafe fn init(&self, spurious_vector: u8) {
-        // SVR bit 8 = APIC software enable; bits 7:0 = spurious vector.
-        // The spurious vector must have bits 3:0 = 0b1111 (i.e., be aligned
-        // to 16) per the Intel SDM.
         let svr = (1u32 << 8) | (spurious_vector as u32);
-        self.write(APIC_SPURIOUS, svr);
+        unsafe { self.write(APIC_SPURIOUS, svr); }
     }
 
     /// Send an End-of-Interrupt signal.
@@ -155,17 +152,17 @@ impl LocalApic {
     /// (except spurious vectors, which must NOT receive an EOI).
     #[inline]
     pub unsafe fn end_of_interrupt(&self) {
-        self.write(APIC_EOI, 0);
+        unsafe { self.write(APIC_EOI, 0); }
     }
 
     /// Return the local APIC ID for this core.
     pub unsafe fn id(&self) -> u8 {
-        ((self.read(APIC_ID) >> 24) & 0xFF) as u8
+        unsafe { ((self.read(APIC_ID) >> 24) & 0xFF) as u8 }
     }
 
     /// Return the local APIC version register value.
     pub unsafe fn version(&self) -> u32 {
-        self.read(APIC_VERSION)
+        unsafe { self.read(APIC_VERSION) }
     }
 
     /// Configure the APIC timer in one-shot or periodic mode.
@@ -181,11 +178,12 @@ impl LocalApic {
         divide: u32,
         periodic: bool,
     ) {
-        // LVT Timer: bit 17 = periodic mode, bits 7:0 = vector.
         let lvt = if periodic { (1 << 17) | vector as u32 } else { vector as u32 };
-        self.write(APIC_TIMER_DIVIDE, divide);
-        self.write(APIC_LVT_TIMER, lvt);
-        self.write(APIC_TIMER_INIT, initial);
+        unsafe {
+            self.write(APIC_TIMER_DIVIDE, divide);
+            self.write(APIC_LVT_TIMER, lvt);
+            self.write(APIC_TIMER_INIT, initial);
+        }
     }
 
     /// Send an Inter-Processor Interrupt (IPI) to a specific APIC ID.
@@ -193,10 +191,9 @@ impl LocalApic {
     /// `dest`   — target local APIC ID.
     /// `vector` — IDT vector to deliver.
     pub unsafe fn send_ipi(&self, dest: u8, vector: u8) {
-        // Write destination first (high word), then command (low word).
-        // Writing ICR_LO triggers the IPI.
-        self.write(APIC_ICR_HI, (dest as u32) << 24);
-        // Fixed delivery mode (bits 10:8 = 000), edge-triggered, assert.
-        self.write(APIC_ICR_LO, vector as u32 | (1 << 14));
+        unsafe {
+            self.write(APIC_ICR_HI, (dest as u32) << 24);
+            self.write(APIC_ICR_LO, vector as u32 | (1 << 14));
+        }
     }
 }

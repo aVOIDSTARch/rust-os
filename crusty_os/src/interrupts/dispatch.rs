@@ -101,7 +101,7 @@ pub unsafe fn dispatch(irq: u8) -> bool {
         return false;
     }
     // SAFETY: We only store valid IrqHandler pointers; null was filtered above.
-    let handler: IrqHandler = core::mem::transmute(ptr);
+    let handler: IrqHandler = unsafe { core::mem::transmute(ptr) };
     handler();
     true
 }

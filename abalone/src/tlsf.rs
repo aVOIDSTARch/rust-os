@@ -53,14 +53,16 @@ impl BlockHeader {
 
     #[inline]
     unsafe fn payload(&mut self) -> *mut u8 {
-        (self as *mut Self as *mut u8).add(core::mem::size_of::<BlockHeader>())
+        unsafe { (self as *mut Self as *mut u8).add(core::mem::size_of::<BlockHeader>()) }
     }
 
     #[inline]
     unsafe fn next_phys(&self) -> *mut BlockHeader {
-        let end = (self as *const Self as *mut u8)
-            .add(core::mem::size_of::<BlockHeader>())
-            .add(self.block_size());
+        let end = unsafe {
+            (self as *const Self as *mut u8)
+                .add(core::mem::size_of::<BlockHeader>())
+                .add(self.block_size())
+        };
         end as *mut BlockHeader
     }
 }
@@ -109,30 +111,34 @@ impl TlsfInner {
     }
 
     unsafe fn insert_free(&mut self, block: *mut BlockHeader) {
-        let (fl, sl) = Self::mapping((*block).block_size());
-        (*block).next_free = self.free_lists[fl][sl];
-        (*block).prev_free = ptr::null_mut();
-        if !self.free_lists[fl][sl].is_null() {
-            (*self.free_lists[fl][sl]).prev_free = block;
+        unsafe {
+            let (fl, sl) = Self::mapping((*block).block_size());
+            (*block).next_free = self.free_lists[fl][sl];
+            (*block).prev_free = ptr::null_mut();
+            if !self.free_lists[fl][sl].is_null() {
+                (*self.free_lists[fl][sl]).prev_free = block;
+            }
+            self.free_lists[fl][sl] = block;
+            self.fl_bitmap |= 1 << fl;
+            self.sl_bitmap[fl] |= 1 << sl;
+            (*block).set_free(true);
         }
-        self.free_lists[fl][sl] = block;
-        self.fl_bitmap |= 1 << fl;
-        self.sl_bitmap[fl] |= 1 << sl;
-        (*block).set_free(true);
     }
 
     unsafe fn remove_free(&mut self, block: *mut BlockHeader) {
-        let (fl, sl) = Self::mapping((*block).block_size());
-        let prev = (*block).prev_free;
-        let next = (*block).next_free;
-        if !prev.is_null() { (*prev).next_free = next; }
-        else               { self.free_lists[fl][sl] = next; }
-        if !next.is_null() { (*next).prev_free = prev; }
-        if self.free_lists[fl][sl].is_null() {
-            self.sl_bitmap[fl] &= !(1 << sl);
-            if self.sl_bitmap[fl] == 0 { self.fl_bitmap &= !(1 << fl); }
+        unsafe {
+            let (fl, sl) = Self::mapping((*block).block_size());
+            let prev = (*block).prev_free;
+            let next = (*block).next_free;
+            if !prev.is_null() { (*prev).next_free = next; }
+            else               { self.free_lists[fl][sl] = next; }
+            if !next.is_null() { (*next).prev_free = prev; }
+            if self.free_lists[fl][sl].is_null() {
+                self.sl_bitmap[fl] &= !(1 << sl);
+                if self.sl_bitmap[fl] == 0 { self.fl_bitmap &= !(1 << fl); }
+            }
+            (*block).set_free(false);
         }
-        (*block).set_free(false);
     }
 
     unsafe fn find_free(&self, size: usize) -> Option<*mut BlockHeader> {
@@ -154,52 +160,57 @@ impl TlsfInner {
         let size = (size + (core::mem::size_of::<usize>() - 1))
             & !(core::mem::size_of::<usize>() - 1);
 
-        let block      = self.find_free(size)?;
-        self.remove_free(block);
+        unsafe {
+            let block = self.find_free(size)?;
+            self.remove_free(block);
 
-        let block_size = (*block).block_size();
-        let remainder  = block_size.wrapping_sub(size);
+            let block_size = (*block).block_size();
+            let remainder  = block_size.wrapping_sub(size);
 
-        if remainder >= core::mem::size_of::<BlockHeader>() + BLOCK_MIN {
-            (*block).set_size(size);
+            if remainder >= core::mem::size_of::<BlockHeader>() + BLOCK_MIN {
+                (*block).set_size(size);
+                let next = (*block).next_phys();
+                (*next).set_size(remainder - core::mem::size_of::<BlockHeader>());
+                (*next).prev_phys = block;
+                (*next).set_prev_free(false);
+                self.insert_free(next);
+                let after = (*next).next_phys();
+                (*after).prev_phys = next;
+            }
+
             let next = (*block).next_phys();
-            (*next).set_size(remainder - core::mem::size_of::<BlockHeader>());
-            (*next).prev_phys = block;
             (*next).set_prev_free(false);
-            self.insert_free(next);
-            let after = (*next).next_phys();
-            (*after).prev_phys = next;
+
+            Some((*block).payload())
         }
-
-        let next = (*block).next_phys();
-        (*next).set_prev_free(false);
-
-        Some((*block).payload())
     }
 
     unsafe fn dealloc(&mut self, ptr: *mut u8) {
         let header_size = core::mem::size_of::<BlockHeader>();
-        let block       = (ptr as *mut BlockHeader).sub(1);
 
-        let mut merged = block;
-        if (*block).prev_free() {
-            let prev     = (*block).prev_phys;
-            self.remove_free(prev);
-            let combined = (*prev).block_size() + header_size + (*block).block_size();
-            (*prev).set_size(combined);
-            merged = prev;
+        unsafe {
+            let block = (ptr as *mut BlockHeader).sub(1);
+
+            let mut merged = block;
+            if (*block).prev_free() {
+                let prev     = (*block).prev_phys;
+                self.remove_free(prev);
+                let combined = (*prev).block_size() + header_size + (*block).block_size();
+                (*prev).set_size(combined);
+                merged = prev;
+            }
+
+            let next = (*merged).next_phys();
+            if (*next).is_free() {
+                self.remove_free(next);
+                let combined = (*merged).block_size() + header_size + (*next).block_size();
+                (*merged).set_size(combined);
+            }
+
+            self.insert_free(merged);
+            let after = (*merged).next_phys();
+            (*after).set_prev_free(true);
         }
-
-        let next = (*merged).next_phys();
-        if (*next).is_free() {
-            self.remove_free(next);
-            let combined = (*merged).block_size() + header_size + (*next).block_size();
-            (*merged).set_size(combined);
-        }
-
-        self.insert_free(merged);
-        let after = (*merged).next_phys();
-        (*after).set_prev_free(true);
     }
 
     unsafe fn add_pool(&mut self, mem: *mut u8, size: usize) {
@@ -211,27 +222,29 @@ impl TlsfInner {
         self.pool_base = mem;
         self.pool_size = size;
 
-        let sentinel_addr = mem.add(size - core::mem::size_of::<BlockHeader>());
-        let sentinel      = sentinel_addr as *mut BlockHeader;
-        ptr::write(sentinel, BlockHeader {
-            size:      0,
-            prev_phys: ptr::null_mut(),
-            next_free: ptr::null_mut(),
-            prev_free: ptr::null_mut(),
-        });
+        unsafe {
+            let sentinel_addr = mem.add(size - core::mem::size_of::<BlockHeader>());
+            let sentinel      = sentinel_addr as *mut BlockHeader;
+            ptr::write(sentinel, BlockHeader {
+                size:      0,
+                prev_phys: ptr::null_mut(),
+                next_free: ptr::null_mut(),
+                prev_free: ptr::null_mut(),
+            });
 
-        let block        = mem as *mut BlockHeader;
-        let payload_size = size - 2 * core::mem::size_of::<BlockHeader>();
-        ptr::write(block, BlockHeader {
-            size:      payload_size,
-            prev_phys: ptr::null_mut(),
-            next_free: ptr::null_mut(),
-            prev_free: ptr::null_mut(),
-        });
-        (*block).set_prev_free(false);
-        (*sentinel).prev_phys = block;
+            let block        = mem as *mut BlockHeader;
+            let payload_size = size - 2 * core::mem::size_of::<BlockHeader>();
+            ptr::write(block, BlockHeader {
+                size:      payload_size,
+                prev_phys: ptr::null_mut(),
+                next_free: ptr::null_mut(),
+                prev_free: ptr::null_mut(),
+            });
+            (*block).set_prev_free(false);
+            (*sentinel).prev_phys = block;
 
-        self.insert_free(block);
+            self.insert_free(block);
+        }
     }
 }
 
@@ -254,7 +267,7 @@ impl TlsfAllocator {
         let size = PAGE_SIZE << buddy_order;
         let mem  = buddy::alloc_pages(buddy_order)
             .expect("TLSF init: buddy OOM — reduce buddy_order or add more regions");
-        self.inner.lock().add_pool(mem, size);
+        unsafe { self.inner.lock().add_pool(mem, size); }
     }
 }
 
@@ -269,7 +282,7 @@ unsafe impl GlobalAlloc for TlsfAllocator {
             layout.align() - 1
         } else { 0 };
 
-        match self.inner.lock().alloc(size + extra) {
+        match unsafe { self.inner.lock().alloc(size + extra) } {
             None      => ptr::null_mut(),
             Some(ptr) => {
                 let aligned = (ptr as usize + extra) & !(layout.align() - 1);
@@ -279,7 +292,7 @@ unsafe impl GlobalAlloc for TlsfAllocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        self.inner.lock().dealloc(ptr);
+        unsafe { self.inner.lock().dealloc(ptr); }
     }
 }
 

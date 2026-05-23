@@ -14,23 +14,38 @@
 use limine::{
     request::{ExecutableAddressRequest, HhdmRequest, MemmapRequest},
     memmap,
-    BaseRevision,
+    BaseRevision, RequestsEndMarker, RequestsStartMarker,
 };
 use framework::{KernelBootInfo, MemoryRegion, MemoryRegionKind};
 
-// ── Limine request statics ────────────────────────────────────────────────────
+// ── Limine request markers and statics ───────────────────────────────────────
+//
+// The start/end markers tell Limine where to scan for requests.
+// All request statics must be in .limine_requests (between the two markers).
 
 #[used]
+#[unsafe(link_section = ".limine_requests_start")]
+static _LIMINE_REQUESTS_START: RequestsStartMarker = RequestsStartMarker::new();
+
+#[used]
+#[unsafe(link_section = ".limine_requests")]
 static BASE_REVISION: BaseRevision = BaseRevision::new();
 
 #[used]
+#[unsafe(link_section = ".limine_requests")]
 static MEMMAP_REQUEST: MemmapRequest = MemmapRequest::new();
 
 #[used]
+#[unsafe(link_section = ".limine_requests")]
 static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
 #[used]
+#[unsafe(link_section = ".limine_requests")]
 static EXEC_ADDR_REQUEST: ExecutableAddressRequest = ExecutableAddressRequest::new();
+
+#[used]
+#[unsafe(link_section = ".limine_requests_end")]
+static _LIMINE_REQUESTS_END: RequestsEndMarker = RequestsEndMarker::new();
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -82,6 +97,6 @@ pub unsafe extern "C" fn _start() -> ! {
 
     let boot_info = KernelBootInfo { memory_regions: regions, hhdm_offset, kernel_phys_base };
 
-    crusty_os::allocator_init(&boot_info);
+    unsafe { crusty_os::allocator_init(&boot_info); }
     crate::kernel_main_post_heap()
 }

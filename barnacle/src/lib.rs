@@ -60,6 +60,25 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use multiboot2::{BootInformation, BootInformationHeader};
 
+// ── Linker-script symbols ─────────────────────────────────────────────────────
+
+unsafe extern "C" {
+    /// Physical address of the first byte past the kernel image.
+    /// Exported by `kernel.ld` as `_kernel_end_phys`.
+    static _kernel_end_phys: u8;
+}
+
+/// Returns the physical address of the first byte past the end of the loaded
+/// kernel image, page-aligned up to the next 4 KiB boundary.
+///
+/// Use this to start the heap region above the kernel to avoid overwriting
+/// code, data, or BSS.
+pub fn kernel_end_phys() -> u64 {
+    let raw = core::ptr::addr_of!(_kernel_end_phys) as u64;
+    // Align up to page boundary.
+    (raw + 0xFFF) & !0xFFF
+}
+
 // ── HHDM layout ───────────────────────────────────────────────────────────────
 
 /// Higher-half direct-map base address.

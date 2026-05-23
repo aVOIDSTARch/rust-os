@@ -82,28 +82,30 @@ impl<T> SlabCacheInner<T> {
             self.grow()?;
         }
 
-        let header   = &mut *self.partial;
-        let slab_base = header as *mut SlabHeader as usize
-            - (self.objs_per_slab * mem::size_of::<T>());
-        let obj_size  = mem::size_of::<T>();
-        let slot_idx  = header.free_head as usize;
+        unsafe {
+            let header    = &mut *self.partial;
+            let slab_base = header as *mut SlabHeader as usize
+                - (self.objs_per_slab * mem::size_of::<T>());
+            let obj_size  = mem::size_of::<T>();
+            let slot_idx  = header.free_head as usize;
 
-        let slot_ptr    = (slab_base + slot_idx * obj_size) as *mut u16;
-        header.free_head = ptr::read(slot_ptr);
-        header.in_use   += 1;
+            let slot_ptr     = (slab_base + slot_idx * obj_size) as *mut u16;
+            header.free_head = ptr::read(slot_ptr);
+            header.in_use   += 1;
 
-        if header.is_full() {
-            self.unlink_partial(header as *mut SlabHeader);
+            if header.is_full() {
+                self.unlink_partial(header as *mut SlabHeader);
+            }
+
+            let obj_ptr = slot_ptr as *mut T;
+            self.stats.alloc_count += 1;
+            self.stats.used_bytes  += obj_size as u64;
+            if self.stats.used_bytes > self.stats.peak_bytes {
+                self.stats.peak_bytes = self.stats.used_bytes;
+            }
+
+            Some(NonNull::new_unchecked(obj_ptr))
         }
-
-        let obj_ptr = slot_ptr as *mut T;
-        self.stats.alloc_count += 1;
-        self.stats.used_bytes  += obj_size as u64;
-        if self.stats.used_bytes > self.stats.peak_bytes {
-            self.stats.peak_bytes = self.stats.used_bytes;
-        }
-
-        Some(NonNull::new_unchecked(obj_ptr))
     }
 
     unsafe fn dealloc(&mut self, ptr: NonNull<T>) {
@@ -113,21 +115,24 @@ impl<T> SlabCacheInner<T> {
         let slab_bytes  = PAGE_SIZE << self.slab_order;
         let slab_base   = (obj_ptr as usize) & !(slab_bytes - 1);
         let header_addr = slab_base + self.objs_per_slab * obj_size;
-        let header      = &mut *(header_addr as *mut SlabHeader);
 
-        let was_full = header.is_full();
-        let slot_idx = (obj_ptr as usize - slab_base) / obj_size;
-        ptr::write(obj_ptr as *mut u16, header.free_head);
-        header.free_head = slot_idx as u16;
-        header.in_use   -= 1;
+        unsafe {
+            let header = &mut *(header_addr as *mut SlabHeader);
 
-        if was_full {
-            self.link_partial(header as *mut SlabHeader);
-        } else if header.is_empty() {
-            self.unlink_partial(header as *mut SlabHeader);
-            buddy::dealloc_pages(slab_base as *mut u8, self.slab_order);
-            self.stats.total_bytes -= slab_bytes as u64;
-            self.stats.free_bytes  -= slab_bytes as u64;
+            let was_full = header.is_full();
+            let slot_idx = (obj_ptr as usize - slab_base) / obj_size;
+            ptr::write(obj_ptr as *mut u16, header.free_head);
+            header.free_head = slot_idx as u16;
+            header.in_use   -= 1;
+
+            if was_full {
+                self.link_partial(header as *mut SlabHeader);
+            } else if header.is_empty() {
+                self.unlink_partial(header as *mut SlabHeader);
+                buddy::dealloc_pages(slab_base as *mut u8, self.slab_order);
+                self.stats.total_bytes -= slab_bytes as u64;
+                self.stats.free_bytes  -= slab_bytes as u64;
+            }
         }
 
         self.stats.dealloc_count += 1;
@@ -168,17 +173,21 @@ impl<T> SlabCacheInner<T> {
     }
 
     unsafe fn link_partial(&mut self, header: *mut SlabHeader) {
-        (*header).next = self.partial;
-        (*header).prev = ptr::null_mut();
-        if !self.partial.is_null() { (*self.partial).prev = header; }
+        unsafe {
+            (*header).next = self.partial;
+            (*header).prev = ptr::null_mut();
+            if !self.partial.is_null() { (*self.partial).prev = header; }
+        }
         self.partial = header;
     }
 
     unsafe fn unlink_partial(&mut self, header: *mut SlabHeader) {
-        let h = &*header;
-        if !h.prev.is_null() { (*h.prev).next = h.next; }
-        else                  { self.partial = h.next; }
-        if !h.next.is_null() { (*h.next).prev = h.prev; }
+        unsafe {
+            let h = &*header;
+            if !h.prev.is_null() { (*h.prev).next = h.next; }
+            else                  { self.partial = h.next; }
+            if !h.next.is_null() { (*h.next).prev = h.prev; }
+        }
     }
 }
 
@@ -201,7 +210,7 @@ impl<T: Send> SlabCache<T> {
     /// `ptr` must originate from `self.alloc()` and the object's destructor
     /// must have been called before invoking this.
     pub unsafe fn dealloc(&self, ptr: NonNull<T>) {
-        self.inner.lock().dealloc(ptr);
+        unsafe { self.inner.lock().dealloc(ptr); }
     }
 
     pub fn stats(&self) -> AllocStats {
