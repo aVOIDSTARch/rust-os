@@ -460,7 +460,7 @@ fn run_qemu(boot: Boot) {
             "-no-reboot",
             "-no-shutdown",
             "-m",        "128M",
-            "-display",  "cocoa,zoom-to-fit=on",
+            "-display",  "VGA,vgamem_mb=64",
         ])
         .spawn()
         .expect("qemu-system-x86_64 failed to start");
