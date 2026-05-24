@@ -14,6 +14,17 @@ set -euo pipefail
 KERNEL="$1"
 DOCKER_IMAGE="barnacle-iso-builder:latest"
 
+# Test binaries produced by `cargo test` have a trailing -<hex> hash in their
+# name (e.g. crusty_os-abc1234). Regular `cargo run` binaries do not.
+# Show the QEMU display only for non-test runs so automated test runs stay
+# headless; test windows would flash briefly for each integration test.
+BINARY_NAME="$(basename "$KERNEL")"
+if [[ "$BINARY_NAME" == *"-"* ]]; then
+    DISPLAY_OPT="-display none"
+else
+    DISPLAY_OPT="-display cocoa"
+fi
+
 # ── Build Docker ISO-builder image (one-time, cached) ────────────────────────
 
 if ! docker image inspect "$DOCKER_IMAGE" &>/dev/null; then
@@ -54,11 +65,12 @@ docker run --rm --platform linux/amd64 \
 # ── Boot ISO in QEMU ──────────────────────────────────────────────────────────
 
 set +e
+# shellcheck disable=SC2086
 qemu-system-x86_64 \
     -cdrom "$TMPDIR/test.iso" \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -serial stdio \
-    -display none \
+    $DISPLAY_OPT \
     -no-reboot \
     -m 128M
 rc=$?

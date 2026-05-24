@@ -36,14 +36,6 @@ header_start:
     dd header_end - header_start                            ; header length
     dd -(0xe85250d6 + 0 + (header_end - header_start))     ; checksum (mod 2^32)
 
-    ; Framebuffer request tag (type=5, flags=1 means optional)
-    dw 5                ; type
-    dw 1                ; flags: optional
-    dd 20               ; size of this tag
-    dd 1280             ; preferred width  (0 = no preference)
-    dd 720              ; preferred height
-    dd 32               ; preferred depth (bits per pixel)
-
     ; End tag (type=0, required)
     align 8
     dw 0                ; type: end
